@@ -1,0 +1,77 @@
+[project]
+name = "api"
+version = "0.1.0"
+description = "FastAPI backend for img-vid-generation"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.136.1",
+    "pydantic-settings>=2.14.1",
+    "uvicorn[standard]>=0.47.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "mypy>=2.1.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.13",
+]
+
+# ---------------------------------------------------------------------------
+# Ruff: linter + formatter (replaces black, flake8, isort)
+# Docs: https://docs.astral.sh/ruff/
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+# Enabled rule sets:
+#   E, W  -> pycodestyle (style)
+#   F     -> pyflakes (unused imports, undefined names)
+#   I     -> isort (import ordering)
+#   B     -> flake8-bugbear (common bugs)
+#   UP    -> pyupgrade (modern Python idioms)
+#   N     -> pep8-naming (function/class naming)
+#   SIM   -> flake8-simplify (simpler expressions)
+#   TID   -> flake8-tidy-imports (no relative imports)
+select = ["E", "W", "F", "I", "B", "UP", "N", "SIM", "TID"]
+ignore = [
+    "E501",  # line-too-long — formatter handles it; ignore the lint check
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802"]  # allow test function names like test_GET_returns_200
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ---------------------------------------------------------------------------
+# mypy: static type checker
+# Docs: https://mypy.readthedocs.io/
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Common pattern: tests can be looser
+module = "tests.*"
+disallow_untyped_defs = false
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+addopts = "-ra --strict-markers"
