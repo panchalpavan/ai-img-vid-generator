@@ -4,8 +4,11 @@ version = "0.1.0"
 description = "FastAPI backend for img-vid-generation"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.18.4",
     "fastapi>=0.136.1",
+    "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
+    "sqlmodel>=0.0.38",
     "uvicorn[standard]>=0.47.0",
 ]
 
