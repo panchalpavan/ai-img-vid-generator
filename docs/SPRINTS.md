@@ -83,6 +83,12 @@ Auth flow: Next.js handles Google OAuth via Auth.js, issues a JWT, includes it a
 - `.env.example` for each app
 - **Learn:** Multi-process dev orchestration
 
+#### 0.5.7 — Per-app READMEs
+- Root `README.md` — project overview, setup instructions, link to docs/
+- `apps/web/README.md` — frontend dev commands, env vars, type-gen workflow
+- `apps/api/README.md` — uv commands, Alembic workflow, Celery worker, pytest, ruff/mypy
+- **Learn:** Each readme is a contract — what a new contributor (or fresh Claude session) needs to operate that piece
+
 **Sprint 0.5 done when:** You can `npm run dev`, see Next.js on `:3000`, FastAPI on `:8000`, Celery worker idle, and `apps/web` can import a generated type from `packages/shared-types`.
 
 ---

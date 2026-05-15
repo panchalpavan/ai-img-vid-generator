@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# img-vid-generation
 
-## Getting Started
+AI image and video generation app. Users describe what they want, the app generates it via Gemini (now) or Sjinn (later), users pay with credits.
 
-First, run the development server:
+This is a **monorepo** containing two services and one shared package.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Structure
+
+```
+img-vid-generation/
+├── apps/
+│   ├── web/                 # Next.js 16 frontend (Auth.js, Shadcn/UI, TanStack Query)
+│   └── api/                 # FastAPI backend (SQLModel, Celery + Redis) — Sprint 0.5.2
+├── packages/
+│   └── shared-types/        # TS types auto-generated from FastAPI's OpenAPI — Sprint 0.5.4
+├── docs/                    # Architecture, ADRs, sprint plan — read this first
+└── docker-compose.yml       # Local infra (Redis, etc.) — Sprint 0.5.5
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Quick start
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Install JS dependencies (apps/web and packages/*)
+npm install
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Run the frontend (Next.js on http://localhost:3000)
+npm run dev:web
 
-## Learn More
+# Later, once apps/api exists:
+# npm run dev:api      # FastAPI on http://localhost:8000
+# npm run dev:worker   # Celery worker
+# npm run dev          # All three at once
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Tech stack
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**Frontend** ([apps/web](apps/web/)): Next.js 16, React 19, TypeScript, Tailwind CSS 4, Auth.js v5, TanStack Query, Shadcn/UI
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+**Backend** ([apps/api](apps/api/)): Python 3.12, FastAPI, SQLModel, Alembic, Celery, Pydantic v2, PyJWT
 
-## Deploy on Vercel
+**Infrastructure (dev)**: Supabase Postgres (free tier), Cloudflare R2, Redis (Docker), Google AI Studio (Gemini free tier)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Documentation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Doc | When to read it |
+|-----|-----------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | First — understand the system topology |
+| [docs/SPRINTS.md](docs/SPRINTS.md) | Current sprint and what's next |
+| [docs/DECISIONS/](docs/DECISIONS/) | Why we chose each piece of the stack (11 ADRs) |
+| [docs/CONVENTIONS.md](docs/CONVENTIONS.md) | Code style and naming |
+| [docs/GOTCHAS.md](docs/GOTCHAS.md) | Sharp edges in Next.js 16, Tailwind 4, React 19 |
+| [apps/web/README.md](apps/web/README.md) | Frontend-specific commands |
+| [apps/api/README.md](apps/api/README.md) | Backend-specific commands |
+
+## Project philosophy
+
+- **Learning-driven** — every decision is documented as an ADR with the reasoning, not just the choice
+- **Zero-cost development** — free tiers across all services; production migration designed but deferred
+- **Adapter pattern everywhere** — AI providers, storage, DB all sit behind thin abstractions so vendor swaps are config changes
+- **Async by default** — even fast Gemini calls go through Celery so the codepath matches Sjinn's slow path
