@@ -20,6 +20,7 @@ This folder records significant architectural decisions with context and trade-o
 | 0009 | JWT-based auth between Next.js and FastAPI | Accepted | 2026-05-16 |
 | 0010 | Celery + Redis for the job queue | Accepted | 2026-05-16 |
 | 0011 | Monorepo via npm workspaces + uv | Accepted | 2026-05-16 |
+| 0012 | Design system — Shadcn/UI, system-preference dark mode, top-nav shell | Accepted | 2026-05-16 |
 
 ## Format
 
