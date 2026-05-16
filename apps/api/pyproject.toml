@@ -5,9 +5,11 @@ description = "FastAPI backend for img-vid-generation"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
+    "celery>=5.6.3",
     "fastapi>=0.136.1",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
+    "redis>=7.4.0",
     "sqlmodel>=0.0.38",
     "uvicorn[standard]>=0.47.0",
 ]
@@ -73,6 +75,18 @@ plugins = ["pydantic.mypy"]
 # Common pattern: tests can be looser
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# Celery's @task decorator has no type stubs; under strict mode that flags
+# every task as "untyped." This override scopes the leniency to task files.
+module = "app.tasks.*"
+disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+# Celery as a whole ships no inline types (no py.typed marker, no stubs
+# package). Telling mypy to skip its imports is the documented workaround.
+module = "celery.*"
+ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------
 # pytest

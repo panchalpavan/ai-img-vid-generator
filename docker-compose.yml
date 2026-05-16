@@ -1,0 +1,43 @@
+# Local development infrastructure.
+#
+# Run from repo root:
+#   docker compose up -d redis   # start in background
+#   docker compose ps            # see status
+#   docker compose logs -f redis # tail logs
+#   docker compose down          # stop & remove containers (keeps volumes)
+#   docker compose down -v       # stop & wipe data (use cautiously)
+#
+# Compose auto-namespaces everything with the project name "img-vid-generation"
+# (derived from this directory), so containers/networks/volumes don't collide
+# with other Docker projects on this machine.
+
+services:
+  redis:
+    image: redis:7-alpine
+    # Custom name so it's obviously ours when running `docker ps`.
+    container_name: img-vid-gen-redis
+    restart: unless-stopped
+    # Port mapping: "host:container".
+    # Host 6379 is already taken on this machine (other Redis projects), so we
+    # bind to host 6380. Inside the container Redis still listens on 6379 —
+    # that's the convention. App connects via REDIS_URL=redis://localhost:6380/0.
+    ports:
+      - "6380:6379"
+    # Run Redis with append-only-file persistence so queued jobs survive a
+    # container restart. Without --appendonly yes, Redis is purely in-memory.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      # Named volume — Docker manages the disk location for us. Survives
+      # `docker compose down`. Wiped only with `docker compose down -v`.
+      - redis-data:/data
+    healthcheck:
+      # Compose can wait for this to pass before declaring the service "ready".
+      # `redis-cli ping` should return PONG when Redis is accepting commands.
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  # Declared so Compose knows to manage it. Inspect with `docker volume ls`.
+  redis-data:

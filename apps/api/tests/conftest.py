@@ -12,3 +12,7 @@ os.environ.setdefault(
     "DATABASE_URL",
     "postgresql://test:test@localhost:5432/test_db",
 )
+os.environ.setdefault(
+    "REDIS_URL",
+    "redis://localhost:6379/0",
+)

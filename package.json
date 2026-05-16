@@ -11,6 +11,7 @@
     "dev": "npm run dev:web",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:api": "uv --directory apps/api run uvicorn app.main:app --reload --port 8000",
+    "dev:worker": "uv --directory apps/api run celery -A app.tasks worker --loglevel=info",
     "build": "npm run build:web",
     "build:web": "npm --workspace apps/web run build",
     "start:web": "npm --workspace apps/web run start",

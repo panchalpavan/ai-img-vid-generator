@@ -9,7 +9,7 @@ missing, the app fails fast with a clear error rather than crashing later.
 
 from functools import lru_cache
 
-from pydantic import PostgresDsn
+from pydantic import PostgresDsn, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -30,6 +30,10 @@ class Settings(BaseSettings):
 
     # Database — Supabase free Postgres (dev) or Cloud SQL (prod). Validated as URL.
     database_url: PostgresDsn
+
+    # Redis — Celery broker + result backend. Local Docker on port 6380 (host 6379
+    # is taken by another project on this machine). Validated as redis:// URL.
+    redis_url: RedisDsn
 
 
 @lru_cache(maxsize=1)
