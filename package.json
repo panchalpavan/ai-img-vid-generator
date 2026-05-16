@@ -19,6 +19,10 @@
     "lint:api": "uv --directory apps/api run ruff check .",
     "format:api": "uv --directory apps/api run ruff format .",
     "typecheck:api": "uv --directory apps/api run mypy app",
-    "test:api": "uv --directory apps/api run pytest"
+    "test:api": "uv --directory apps/api run pytest",
+    "gen:api-types": "uv --directory apps/api run python -m app.openapi_export > packages/shared-types/openapi.json && openapi-typescript packages/shared-types/openapi.json -o packages/shared-types/api.d.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0"
   }
 }

@@ -1,0 +1,106 @@
+{
+  "components": {
+    "schemas": {
+      "DBHealthResponse": {
+        "description": "Response shape for /healthz/db (readiness check including DB).",
+        "properties": {
+          "db": {
+            "title": "Db",
+            "type": "string"
+          },
+          "probe": {
+            "title": "Probe",
+            "type": "integer"
+          },
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service",
+          "db",
+          "probe"
+        ],
+        "title": "DBHealthResponse",
+        "type": "object"
+      },
+      "HealthResponse": {
+        "description": "Response shape for /healthz (liveness check).",
+        "properties": {
+          "service": {
+            "title": "Service",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "service"
+        ],
+        "title": "HealthResponse",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Backend for the img-vid-generation app.",
+    "title": "img-vid-generation API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/healthz": {
+      "get": {
+        "description": "Liveness probe. Returns OK if the process is running.\n\nCheap \u2014 does not touch the database. Suitable for load-balancer\nliveness checks that fire every few seconds.",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/healthz/db": {
+      "get": {
+        "description": "Readiness probe. Verifies the database is reachable by running SELECT 1.\n\nMore expensive than /healthz \u2014 actually hits the DB. Use for readiness\nchecks that gate traffic, or as a smoke test during deploys.",
+        "operationId": "healthz_db_healthz_db_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DBHealthResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Healthz Db",
+        "tags": [
+          "meta"
+        ]
+      }
+    }
+  }
+}

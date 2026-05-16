@@ -1,0 +1,12 @@
+{
+  "name": "@img-vid-gen/shared-types",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TS types auto-generated from apps/api's OpenAPI schema",
+  "types": "./api.d.ts",
+  "main": "./api.d.ts",
+  "files": [
+    "api.d.ts",
+    "openapi.json"
+  ]
+}
