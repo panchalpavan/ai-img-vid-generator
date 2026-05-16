@@ -7,17 +7,33 @@ Or from repo root: `npm run dev:api`
 from typing import Annotated
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session
 
 from app.core.db import get_session
+from app.routers import me as me_router
 
 app = FastAPI(
     title="img-vid-generation API",
     description="Backend for the img-vid-generation app.",
     version="0.1.0",
 )
+
+# Allow the Next.js frontend to call us from a different origin.
+# In dev that's http://localhost:3000. Sprint 7 (deploy) will switch this to
+# read allowed origins from env so we can add the production frontend domain.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Sub-routers.
+app.include_router(me_router.router)
 
 # Type alias so route signatures stay short and reusable.
 SessionDep = Annotated[Session, Depends(get_session)]

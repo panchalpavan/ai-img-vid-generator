@@ -35,6 +35,20 @@ class Settings(BaseSettings):
     # is taken by another project on this machine). Validated as redis:// URL.
     redis_url: RedisDsn
 
+    # JWT — shared secret with apps/web (ADR-0009). HS256 algorithm. Auth.js
+    # signs session tokens with this key; FastAPI verifies them.
+    jwt_secret: str
+
+    # Dev convenience: if a signed-in user's email matches this, the /me
+    # response shows an effectively-infinite balance. Leave unset in
+    # production. Optional — when None, no user gets the bypass.
+    dev_email: str | None = None
+
+    # New users start with this credit balance. Default 0 (cold start UX),
+    # set to e.g. 5 to give every signup five free generations. Insert is
+    # logged as a CreditTransaction(type=STARTER_BONUS) for audit.
+    free_starter_credits: int = 0
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
