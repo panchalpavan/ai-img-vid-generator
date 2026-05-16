@@ -14,6 +14,7 @@ import type { components, paths } from "@img-vid-gen/shared-types";
 // ---------------------------------------------------------------------------
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type DBHealthResponse = components["schemas"]["DBHealthResponse"];
+export type MeResponse = components["schemas"]["MeResponse"];
 
 // ---------------------------------------------------------------------------
 // Per-endpoint shapes — useful when building a typed fetch wrapper later.

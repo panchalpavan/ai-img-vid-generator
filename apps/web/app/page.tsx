@@ -1,6 +1,7 @@
 import Image from "next/image";
 
 import { auth, signIn, signOut } from "@/auth";
+import { BalanceDisplay } from "./_components/balance-display";
 
 /**
  * Home page (Server Component).
@@ -75,6 +76,7 @@ function SignedInView({
         <p className="text-lg">{name}</p>
         <p className="text-sm opacity-70">{email}</p>
       </div>
+      <BalanceDisplay />
       <form
         action={async () => {
           "use server";

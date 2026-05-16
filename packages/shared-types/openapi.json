@@ -48,6 +48,61 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "MeResponse": {
+        "description": "Shape of GET /me.",
+        "properties": {
+          "balance": {
+            "title": "Balance",
+            "type": "integer"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Url"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "image_url",
+          "balance"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
       }
     }
   },
@@ -99,6 +154,33 @@
         "summary": "Healthz Db",
         "tags": [
           "meta"
+        ]
+      }
+    },
+    "/me": {
+      "get": {
+        "description": "Return the authenticated user's profile + credit balance.\n\nDev bypass: if the user's email matches `DEV_EMAIL`, the reported\nbalance is effectively infinite. The actual `profiles.credit_balance`\nin the DB is unchanged \u2014 this is purely a read-time substitution so\nthe dev never has to top up credits while developing.",
+        "operationId": "me_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Me",
+        "tags": [
+          "me"
         ]
       }
     }
