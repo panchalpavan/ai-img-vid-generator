@@ -1,8 +1,17 @@
 # Sprint Plan — img-vid-generation
 
 > Last updated: 2026-05-16
-> Current sprint: Not started (Sprint 0.5 is next when user says go)
+> Current sprint: Sprint 1 (Identity & Wallet) — **complete end-to-end**. Sprint 2 (Adaptive Model Layer) is next.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
+>
+> **Completed sprints (with verification):**
+> - Sprint 0.5 — Monorepo, FastAPI, Postgres+Alembic, OpenAPI codegen, Redis+Celery, dev orchestrator, READMEs.
+> - Sprint 1.1 — Auth.js v5 + Google OAuth + HS256 JWS session strategy (jwt.encode/decode override in `apps/web/auth.ts`).
+> - Sprint 1.2 — `users`, `profiles`, `credit_transactions` tables migrated to Supabase via Alembic.
+> - Sprint 1.3 — FastAPI JWT verify middleware (`apps/api/app/deps/auth.py`), JIT user provisioning, drift refresh of name/avatar/sub.
+> - Sprint 1.4 — `GET /me` endpoint with dev-email infinite-balance bypass.
+> - Sprint 1.5 — Frontend `useMe()` hook + `/api/auth/token` HttpOnly-cookie relay + TanStack Query provider.
+> - Sprint 1.6 — Shadcn/UI installed, `next-themes` system-preference dark mode, sticky navbar with credit badge + user menu, ADR-0012 written, system font stack (SF Pro on macOS).
 
 ## Architecture summary
 
