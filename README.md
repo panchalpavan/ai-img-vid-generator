@@ -20,16 +20,35 @@ img-vid-generation/
 ## Quick start
 
 ```bash
-# Install JS dependencies (apps/web and packages/*)
+# Prerequisites: Docker Desktop, Node 20+, uv (https://docs.astral.sh/uv/)
+
+# 1. Install JS dependencies (apps/web + packages/*)
 npm install
 
-# Run the frontend (Next.js on http://localhost:3000)
-npm run dev:web
+# 2. Install Python dependencies + create virtualenv
+uv --directory apps/api sync
 
-# Later, once apps/api exists:
-# npm run dev:api      # FastAPI on http://localhost:8000
-# npm run dev:worker   # Celery worker
-# npm run dev          # All three at once
+# 3. Copy example env file and fill in your Supabase + Redis URLs
+cp apps/api/.env.example apps/api/.env
+$EDITOR apps/api/.env
+
+# 4. Apply DB migrations
+uv --directory apps/api run alembic upgrade head
+
+# 5. Start everything (Redis auto-starts via predev hook):
+npm run dev
+# → Next.js  on http://localhost:3000
+# → FastAPI  on http://localhost:8000  (docs at /docs)
+# → Celery worker (background)
+# → Redis    on host port 6380 (Docker)
+
+# Or run any of them individually:
+npm run dev:web | dev:api | dev:worker
+
+# Other useful scripts:
+npm run gen:api-types     # Regenerate TS types from FastAPI's OpenAPI schema
+npm run lint              # Lint web + api
+npm run build:web         # Production build of Next.js
 ```
 
 ## Tech stack

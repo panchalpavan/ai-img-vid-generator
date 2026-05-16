@@ -8,7 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev:web",
+    "predev": "docker compose up -d redis",
+    "dev": "concurrently -n web,api,worker -c blue,green,yellow --kill-others \"npm run dev:web\" \"npm run dev:api\" \"npm run dev:worker\"",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:api": "uv --directory apps/api run uvicorn app.main:app --reload --port 8000",
     "dev:worker": "uv --directory apps/api run celery -A app.tasks worker --loglevel=info",
@@ -24,6 +25,7 @@
     "gen:api-types": "uv --directory apps/api run python -m app.openapi_export > packages/shared-types/openapi.json && openapi-typescript packages/shared-types/openapi.json -o packages/shared-types/api.d.ts"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "openapi-typescript": "^7.13.0"
   }
 }
