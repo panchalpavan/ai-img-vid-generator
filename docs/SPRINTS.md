@@ -269,6 +269,16 @@ To be decided before Sprint 7 begins.
 ## Parking Lot
 
 - **Migrate Gemini adapter from `google.generativeai` to `google.genai`.** The old SDK is deprecated as of 2026; current code works but should migrate before the deprecation becomes removal. Single-file change in `apps/api/app/providers/google_ai_studio.py`.
+
+- **Image generation provider cascade.** When we add image generation (likely Sprint 3, once R2 storage exists; or pre-Sprint-3 with base64 data URIs), register three providers, all behind the existing `ProviderAdapter` protocol (ADR-0005):
+  1. **Gemini 2.5 Flash Image** (`gemini-2.5-flash-image` aka "Nano Banana") — first try; reuses the existing API key + adapter, no new account. May hit `limit: 0` on free tier the way text did, in which case it stays registered but yields to the next provider.
+  2. **Cloudflare Workers AI** — primary reliable free tier. ~25–100 images/day at 10k neurons. Needs CF account + API token. Models: FLUX.1-schnell, SDXL. New file: `apps/api/app/providers/cloudflare_workers_ai.py`.
+  3. **Pollinations.ai** — fallback of last resort. No auth, URL-based (`https://image.pollinations.ai/prompt/{prompt}?model=flux`), FLUX-backed. Depends on a single org's goodwill — keep in pocket, don't rely on it.
+
+  Pattern is a try-next-on-failure cascade at the `/generations` endpoint, not at the adapter layer. Failure modes: quota exhaustion (429), content blocked (4xx), provider unreachable (5xx, timeout). When all three fail, surface the failure.
+
+- **Video generation.** Free-tier video gen does not realistically exist in 2026. Plan stays: Sjinn integration in Sprint 6. Until then, no video model is registered.
+
 - Video timeline editor
 - Public generation gallery / profiles
 - Batch generations
