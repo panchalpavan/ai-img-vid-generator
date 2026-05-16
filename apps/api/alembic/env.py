@@ -11,14 +11,14 @@ from logging.config import fileConfig
 
 from alembic import context
 from app.core.config import settings
+from app.models import credit_transaction, profile, user  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 
-# IMPORTANT: import every module that defines SQLModel tables so they get
-# registered on SQLModel.metadata. Add new imports here as models are added.
-# Sprint 1.2 will introduce: User, Profile, CreditTransaction.
-#
-# from app.models import user, profile, credit_transaction  # noqa: F401
+# The `from app.models import ...` line above is a side-effect import: every
+# module that defines a SQLModel table must be imported so the tables get
+# registered on SQLModel.metadata before autogenerate introspects it.
+# Add a new entry every time a new model file is created.
 
 # Alembic Config object — wraps alembic.ini.
 config = context.config
