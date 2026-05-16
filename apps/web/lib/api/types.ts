@@ -15,6 +15,14 @@ import type { components, paths } from "@img-vid-gen/shared-types";
 export type HealthResponse = components["schemas"]["HealthResponse"];
 export type DBHealthResponse = components["schemas"]["DBHealthResponse"];
 export type MeResponse = components["schemas"]["MeResponse"];
+// Sprint 2 — adaptive model layer
+export type ModelConfig = components["schemas"]["ModelConfig"];
+export type InputType = components["schemas"]["InputType"];
+export type OutputType = components["schemas"]["OutputType"];
+export type ProviderName = components["schemas"]["ProviderName"];
+export type GenerationInput = components["schemas"]["GenerationInput"];
+export type GenerationOutput = components["schemas"]["GenerationOutput"];
+export type CreateGenerationRequest = components["schemas"]["CreateGenerationRequest"];
 
 // ---------------------------------------------------------------------------
 // Per-endpoint shapes — useful when building a typed fetch wrapper later.

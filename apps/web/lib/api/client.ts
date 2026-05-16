@@ -45,4 +45,38 @@ export async function apiGet<T>(path: string): Promise<T> {
   return (await res.json()) as T;
 }
 
+/**
+ * GET <api>/<path> without a JWT — used for public endpoints like /models
+ * that don't require authentication.
+ */
+export async function apiGetPublic<T>(path: string): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`);
+  if (!res.ok) {
+    throw new ApiError(res.status, await res.json().catch(() => null));
+  }
+  return (await res.json()) as T;
+}
+
+/**
+ * POST <api>/<path> with JSON body and JWT attached.
+ */
+export async function apiPost<TBody, TResponse>(
+  path: string,
+  body: TBody,
+): Promise<TResponse> {
+  const jwt = await fetchJwt();
+  const res = await fetch(`${API_URL}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${jwt}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, await res.json().catch(() => null));
+  }
+  return (await res.json()) as TResponse;
+}
+
 export { ApiError };

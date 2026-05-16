@@ -7,6 +7,7 @@ dependencies = [
     "alembic>=1.18.4",
     "celery>=5.6.3",
     "fastapi>=0.136.1",
+    "google-generativeai>=0.8.6",
     "psycopg2-binary>=2.9.12",
     "pydantic-settings>=2.14.1",
     "pyjwt>=2.12.1",
@@ -88,6 +89,13 @@ disallow_untyped_decorators = false
 # package). Telling mypy to skip its imports is the documented workaround.
 module = "celery.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# google-generativeai (Gemini SDK) ships a partial py.typed marker but
+# doesn't explicitly re-export top-level symbols like `configure` and
+# `GenerativeModel`. Disable attr-defined only for our adapter file.
+module = "app.providers.google_ai_studio"
+disable_error_code = ["attr-defined"]
 
 # ---------------------------------------------------------------------------
 # pytest

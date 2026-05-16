@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     # logged as a CreditTransaction(type=STARTER_BONUS) for audit.
     free_starter_credits: int = 0
 
+    # Google AI Studio API key — used by the Gemini provider adapter
+    # (apps/api/app/providers/google_ai_studio.py). Get one for free at
+    # https://aistudio.google.com/apikey. Sprint 7 migrates to Vertex AI
+    # which uses GCP IAM instead.
+    google_api_key: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

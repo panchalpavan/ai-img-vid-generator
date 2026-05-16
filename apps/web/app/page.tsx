@@ -1,4 +1,5 @@
 import { auth } from "@/auth";
+import { GenerationView } from "@/components/generation-view";
 import { Button } from "@/components/ui/button";
 import { signInWithGoogleAction } from "@/lib/auth/actions";
 
@@ -33,14 +34,5 @@ export default async function Home() {
     );
   }
 
-  return (
-    <section className="flex min-h-[calc(100vh-3.5rem)] flex-col items-center justify-center gap-2 p-8 text-center">
-      <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-        You&apos;re signed in
-      </h1>
-      <p className="text-muted-foreground">
-        Generation UI lands in Sprint 2.
-      </p>
-    </section>
-  );
+  return <GenerationView />;
 }

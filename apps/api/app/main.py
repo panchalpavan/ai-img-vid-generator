@@ -13,7 +13,9 @@ from sqlalchemy import text
 from sqlmodel import Session
 
 from app.core.db import get_session
+from app.routers import generations as generations_router
 from app.routers import me as me_router
+from app.routers import models as models_router
 
 app = FastAPI(
     title="img-vid-generation API",
@@ -34,6 +36,8 @@ app.add_middleware(
 
 # Sub-routers.
 app.include_router(me_router.router)
+app.include_router(models_router.router)
+app.include_router(generations_router.router)
 
 # Type alias so route signatures stay short and reusable.
 SessionDep = Annotated[Session, Depends(get_session)]

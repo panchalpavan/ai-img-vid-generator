@@ -268,6 +268,7 @@ To be decided before Sprint 7 begins.
 
 ## Parking Lot
 
+- **Migrate Gemini adapter from `google.generativeai` to `google.genai`.** The old SDK is deprecated as of 2026; current code works but should migrate before the deprecation becomes removal. Single-file change in `apps/api/app/providers/google_ai_studio.py`.
 - Video timeline editor
 - Public generation gallery / profiles
 - Batch generations

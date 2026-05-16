@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "CreateGenerationRequest": {
+        "description": "Request body for POST /generations.",
+        "properties": {
+          "inputs": {
+            "$ref": "#/components/schemas/GenerationInput"
+          },
+          "model_id": {
+            "description": "Must match a model returned by GET /models.",
+            "title": "Model Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "model_id",
+          "inputs"
+        ],
+        "title": "CreateGenerationRequest",
+        "type": "object"
+      },
       "DBHealthResponse": {
         "description": "Response shape for /healthz/db (readiness check including DB).",
         "properties": {
@@ -30,6 +49,80 @@
         "title": "DBHealthResponse",
         "type": "object"
       },
+      "GenerationInput": {
+        "description": "User-supplied inputs for a generation request.\n\nFields are all optional \u2014 which apply depends on the selected model's\ninput_types. Validation that the right fields are present happens in\nthe /generations endpoint.",
+        "properties": {
+          "image_urls": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Image Urls",
+            "type": "array"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          }
+        },
+        "title": "GenerationInput",
+        "type": "object"
+      },
+      "GenerationOutput": {
+        "description": "Result of a synchronous generation call.\n\nSprint 3 will add an async variant (`JobHandle`) for providers like\nSjinn that return a task ID instead of a finished result.",
+        "properties": {
+          "output_type": {
+            "$ref": "#/components/schemas/OutputType"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "output_type"
+        ],
+        "title": "GenerationOutput",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
       "HealthResponse": {
         "description": "Response shape for /healthz (liveness check).",
         "properties": {
@@ -48,6 +141,16 @@
         ],
         "title": "HealthResponse",
         "type": "object"
+      },
+      "InputType": {
+        "description": "Kinds of input a model can accept.\n\nDrives the dynamic form on the frontend: each entry in\nModelConfig.input_types becomes a form field.",
+        "enum": [
+          "text",
+          "image",
+          "video"
+        ],
+        "title": "InputType",
+        "type": "string"
       },
       "MeResponse": {
         "description": "Shape of GET /me.",
@@ -97,6 +200,111 @@
         ],
         "title": "MeResponse",
         "type": "object"
+      },
+      "ModelConfig": {
+        "description": "Frontend-visible metadata about one model.\n\nReturned as a list from GET /models. The frontend uses this to:\n  - populate the model dropdown (display_name)\n  - render the right form fields (input_types)\n  - display the cost (cost_in_credits)\n  - decide whether to poll for an async result (is_async)",
+        "properties": {
+          "cost_in_credits": {
+            "title": "Cost In Credits",
+            "type": "integer"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input_types": {
+            "items": {
+              "$ref": "#/components/schemas/InputType"
+            },
+            "title": "Input Types",
+            "type": "array"
+          },
+          "is_async": {
+            "title": "Is Async",
+            "type": "boolean"
+          },
+          "output_type": {
+            "$ref": "#/components/schemas/OutputType"
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProviderName"
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "display_name",
+          "input_types",
+          "output_type",
+          "cost_in_credits",
+          "is_async"
+        ],
+        "title": "ModelConfig",
+        "type": "object"
+      },
+      "OutputType": {
+        "description": "Kind of output a model produces.",
+        "enum": [
+          "text",
+          "image",
+          "video"
+        ],
+        "title": "OutputType",
+        "type": "string"
+      },
+      "ProviderName": {
+        "description": "The AI services we can route to.",
+        "enum": [
+          "google-ai-studio",
+          "vertex-ai",
+          "sjinn"
+        ],
+        "title": "ProviderName",
+        "type": "string"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -113,6 +321,53 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/generations": {
+      "post": {
+        "description": "Run a generation synchronously against the selected model.",
+        "operationId": "create_generation_generations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateGenerationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationOutput"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Generation",
+        "tags": [
+          "generations"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "description": "Liveness probe. Returns OK if the process is running.\n\nCheap \u2014 does not touch the database. Suitable for load-balancer\nliveness checks that fire every few seconds.",
@@ -181,6 +436,32 @@
         "summary": "Me",
         "tags": [
           "me"
+        ]
+      }
+    },
+    "/models": {
+      "get": {
+        "description": "Return every model the frontend can offer.",
+        "operationId": "list_models_models_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ModelConfig"
+                  },
+                  "title": "Response List Models Models Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Models",
+        "tags": [
+          "models"
         ]
       }
     }

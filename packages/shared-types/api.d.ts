@@ -4,6 +4,26 @@
  */
 
 export interface paths {
+    "/generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Generation
+         * @description Run a generation synchronously against the selected model.
+         */
+        post: operations["create_generation_generations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -75,10 +95,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Models
+         * @description Return every model the frontend can offer.
+         */
+        get: operations["list_models_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * CreateGenerationRequest
+         * @description Request body for POST /generations.
+         */
+        CreateGenerationRequest: {
+            inputs: components["schemas"]["GenerationInput"];
+            /**
+             * Model Id
+             * @description Must match a model returned by GET /models.
+             */
+            model_id: string;
+        };
         /**
          * DBHealthResponse
          * @description Response shape for /healthz/db (readiness check including DB).
@@ -94,6 +146,42 @@ export interface components {
             status: string;
         };
         /**
+         * GenerationInput
+         * @description User-supplied inputs for a generation request.
+         *
+         *     Fields are all optional — which apply depends on the selected model's
+         *     input_types. Validation that the right fields are present happens in
+         *     the /generations endpoint.
+         */
+        GenerationInput: {
+            /**
+             * Image Urls
+             * @default []
+             */
+            image_urls: string[];
+            /** Text */
+            text?: string | null;
+        };
+        /**
+         * GenerationOutput
+         * @description Result of a synchronous generation call.
+         *
+         *     Sprint 3 will add an async variant (`JobHandle`) for providers like
+         *     Sjinn that return a task ID instead of a finished result.
+         */
+        GenerationOutput: {
+            output_type: components["schemas"]["OutputType"];
+            /** Text */
+            text?: string | null;
+            /** Url */
+            url?: string | null;
+        };
+        /** HTTPValidationError */
+        HTTPValidationError: {
+            /** Detail */
+            detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
          * HealthResponse
          * @description Response shape for /healthz (liveness check).
          */
@@ -103,6 +191,15 @@ export interface components {
             /** Status */
             status: string;
         };
+        /**
+         * InputType
+         * @description Kinds of input a model can accept.
+         *
+         *     Drives the dynamic form on the frontend: each entry in
+         *     ModelConfig.input_types becomes a form field.
+         * @enum {string}
+         */
+        InputType: "text" | "image" | "video";
         /**
          * MeResponse
          * @description Shape of GET /me.
@@ -122,6 +219,55 @@ export interface components {
             /** Name */
             name: string | null;
         };
+        /**
+         * ModelConfig
+         * @description Frontend-visible metadata about one model.
+         *
+         *     Returned as a list from GET /models. The frontend uses this to:
+         *       - populate the model dropdown (display_name)
+         *       - render the right form fields (input_types)
+         *       - display the cost (cost_in_credits)
+         *       - decide whether to poll for an async result (is_async)
+         */
+        ModelConfig: {
+            /** Cost In Credits */
+            cost_in_credits: number;
+            /** Display Name */
+            display_name: string;
+            /** Id */
+            id: string;
+            /** Input Types */
+            input_types: components["schemas"]["InputType"][];
+            /** Is Async */
+            is_async: boolean;
+            output_type: components["schemas"]["OutputType"];
+            provider: components["schemas"]["ProviderName"];
+        };
+        /**
+         * OutputType
+         * @description Kind of output a model produces.
+         * @enum {string}
+         */
+        OutputType: "text" | "image" | "video";
+        /**
+         * ProviderName
+         * @description The AI services we can route to.
+         * @enum {string}
+         */
+        ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn";
+        /** ValidationError */
+        ValidationError: {
+            /** Context */
+            ctx?: Record<string, never>;
+            /** Input */
+            input?: unknown;
+            /** Location */
+            loc: (string | number)[];
+            /** Message */
+            msg: string;
+            /** Error Type */
+            type: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -131,6 +277,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_generation_generations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateGenerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationOutput"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     healthz_healthz_get: {
         parameters: {
             query?: never;
@@ -187,6 +366,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeResponse"];
+                };
+            };
+        };
+    };
+    list_models_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelConfig"][];
                 };
             };
         };
