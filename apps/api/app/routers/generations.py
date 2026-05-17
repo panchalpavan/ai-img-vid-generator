@@ -1,24 +1,28 @@
-"""POST /generations — synchronous generation endpoint (Sprint 2 POC).
+"""Async generations API (Sprint 3 refactor).
 
-Sprint 3 will refactor this to enqueue a Celery task and return a
-`pending` row, with status polled at `GET /generations/{id}`. That refactor
-also adds credit deduction tied to the new `generations` table row. For
-now this just calls the adapter directly and returns the result.
+  POST /generations          → create pending row, enqueue Celery task,
+                                return {id, status: "pending"}
+  GET  /generations/{id}     → fetch a row (owner-only) — frontend polls
+                                this until status is terminal
+  GET  /generations          → list current user's generations, newest first
 
-Auth: requires a valid JWT. The current user is provisioned just-in-time
-(see app/deps/auth.py) if this is their first authenticated call.
+Credit deduction and provider invocation live in the Celery task
+(app/tasks/generation.py), not here. This file only does HTTP I/O.
 """
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+from datetime import datetime
+from typing import Annotated
+from uuid import UUID
 
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, Field
+from sqlmodel import Session, desc, select
+
+from app.core.db import get_session
 from app.deps.auth import CurrentUser
-from app.providers import (
-    GenerationInput,
-    GenerationOutput,
-    InputType,
-    registry,
-)
+from app.models.generation import Generation, GenerationStatus
+from app.providers import GenerationInput, InputType, registry
+from app.tasks.generation import run_generation
 
 router = APIRouter()
 
@@ -30,54 +34,131 @@ class CreateGenerationRequest(BaseModel):
     inputs: GenerationInput
 
 
+class GenerationResponse(BaseModel):
+    """Public-facing shape of a Generation row.
+
+    Mirrors the DB columns we want to expose. Excludes user_id (already
+    implicit via auth) and inputs (already in `prompt` for Sprint 3).
+    """
+
+    id: UUID
+    model_id: str
+    prompt: str
+    status: GenerationStatus
+    result_text: str | None
+    result_url: str | None
+    error: str | None
+    cost_in_credits: int
+    created_at: datetime
+    updated_at: datetime
+
+
+def _to_response(row: Generation) -> GenerationResponse:
+    return GenerationResponse(
+        id=row.id,
+        model_id=row.model_id,
+        prompt=row.prompt,
+        status=row.status,
+        result_text=row.result_text,
+        result_url=row.result_url,
+        error=row.error,
+        cost_in_credits=row.cost_in_credits,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
 @router.post(
     "/generations",
-    response_model=GenerationOutput,
+    response_model=GenerationResponse,
+    status_code=status.HTTP_201_CREATED,
     tags=["generations"],
 )
 def create_generation(
     req: CreateGenerationRequest,
-    # Even though this user isn't (yet) consumed below, requiring auth
-    # provisions them and rejects unauthenticated callers. Keep the
-    # parameter so the dependency runs.
-    _user: CurrentUser,
-) -> GenerationOutput:
-    """Run a generation synchronously against the selected model."""
+    user: CurrentUser,
+    session: Annotated[Session, Depends(get_session)],
+) -> GenerationResponse:
+    """Submit a new generation. Returns immediately with status=pending.
+
+    The Celery worker picks up the row, charges credits, runs the provider,
+    and lands it in done/failed. Clients poll `GET /generations/{id}` for
+    updates.
+    """
     try:
-        config, adapter = registry.get(req.model_id)
+        config, _adapter = registry.get(req.model_id)
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from None
 
-    # Input-shape validation: every input_type the model requires must
-    # have a non-empty value supplied. (We assume required-for-now; later
-    # we can add per-input optionality if needed.)
+    # Validate inputs against the model's declared input_types.
     if InputType.TEXT in config.input_types and not req.inputs.text:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail=f"Model {req.model_id!r} requires a 'text' input.",
         )
 
-    # TODO (Sprint 3): credit deduction. Once `generations` table exists
-    # we'll insert a row, use its UUID as the CreditTransaction.reference_id,
-    # debit profiles.credit_balance, all in one transaction. Dev user (per
-    # settings.dev_email) bypasses the debit.
+    row = Generation(
+        user_id=user.id,
+        model_id=config.id,
+        prompt=req.inputs.text or "",
+        status=GenerationStatus.PENDING,
+        # Snapshot the cost — if registry config changes later, this row's
+        # historical cost is preserved.
+        cost_in_credits=config.cost_in_credits,
+    )
+    session.add(row)
+    session.commit()
+    session.refresh(row)
 
-    try:
-        return adapter.generate(req.model_id, req.inputs)
-    except RuntimeError as exc:
-        # Misconfiguration (e.g., missing API key) — surface as 500 with the
-        # provider's message so the dev can fix it.
+    # Enqueue. .delay returns an AsyncResult we don't need to keep — the
+    # generations table is our source of truth for status, not Redis.
+    run_generation.delay(str(row.id))
+
+    return _to_response(row)
+
+
+@router.get(
+    "/generations/{generation_id}",
+    response_model=GenerationResponse,
+    tags=["generations"],
+)
+def get_generation(
+    generation_id: UUID,
+    user: CurrentUser,
+    session: Annotated[Session, Depends(get_session)],
+) -> GenerationResponse:
+    """Fetch one generation. Returns 404 if it isn't the caller's row."""
+    row = session.get(Generation, generation_id)
+    if row is None or row.user_id != user.id:
+        # Return 404 either way — don't leak whether a foreign generation
+        # exists. (Common practice for owner-scoped resources.)
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        # Provider call failed (network, rate limit, content blocked, etc.).
-        # 502 because it's an upstream-service failure.
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Provider error: {exc}",
-        ) from exc
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Generation not found.",
+        )
+    return _to_response(row)
+
+
+@router.get(
+    "/generations",
+    response_model=list[GenerationResponse],
+    tags=["generations"],
+)
+def list_generations(
+    user: CurrentUser,
+    session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> list[GenerationResponse]:
+    """List the caller's generations, newest first."""
+    rows = session.exec(
+        select(Generation)
+        .where(Generation.user_id == user.id)
+        .order_by(desc(Generation.created_at))
+        .offset(offset)
+        .limit(limit)
+    ).all()
+    return [_to_response(row) for row in rows]

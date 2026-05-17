@@ -75,13 +75,19 @@
         "title": "GenerationInput",
         "type": "object"
       },
-      "GenerationOutput": {
-        "description": "Result of a synchronous generation call.\n\nSprint 3 will add an async variant (`JobHandle`) for providers like\nSjinn that return a task ID instead of a finished result.",
+      "GenerationResponse": {
+        "description": "Public-facing shape of a Generation row.\n\nMirrors the DB columns we want to expose. Excludes user_id (already\nimplicit via auth) and inputs (already in `prompt` for Sprint 3).",
         "properties": {
-          "output_type": {
-            "$ref": "#/components/schemas/OutputType"
+          "cost_in_credits": {
+            "title": "Cost In Credits",
+            "type": "integer"
           },
-          "text": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
             "anyOf": [
               {
                 "type": "string"
@@ -90,9 +96,22 @@
                 "type": "null"
               }
             ],
-            "title": "Text"
+            "title": "Error"
           },
-          "url": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "result_text": {
             "anyOf": [
               {
                 "type": "string"
@@ -101,14 +120,53 @@
                 "type": "null"
               }
             ],
-            "title": "Url"
+            "title": "Result Text"
+          },
+          "result_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Url"
+          },
+          "status": {
+            "$ref": "#/components/schemas/GenerationStatus"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
           }
         },
         "required": [
-          "output_type"
+          "id",
+          "model_id",
+          "prompt",
+          "status",
+          "result_text",
+          "result_url",
+          "error",
+          "cost_in_credits",
+          "created_at",
+          "updated_at"
         ],
-        "title": "GenerationOutput",
+        "title": "GenerationResponse",
         "type": "object"
+      },
+      "GenerationStatus": {
+        "description": "Lifecycle of a generation row.\n\nStored as VARCHAR for the same reason TransactionType is \u2014 Alembic\nmigrations of Postgres ENUMs are notoriously painful.",
+        "enum": [
+          "pending",
+          "processing",
+          "done",
+          "failed"
+        ],
+        "title": "GenerationStatus",
+        "type": "string"
       },
       "HTTPValidationError": {
         "properties": {
@@ -322,8 +380,72 @@
   "openapi": "3.1.0",
   "paths": {
     "/generations": {
+      "get": {
+        "description": "List the caller's generations, newest first.",
+        "operationId": "list_generations_generations_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenerationResponse"
+                  },
+                  "title": "Response List Generations Generations Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Generations",
+        "tags": [
+          "generations"
+        ]
+      },
       "post": {
-        "description": "Run a generation synchronously against the selected model.",
+        "description": "Submit a new generation. Returns immediately with status=pending.\n\nThe Celery worker picks up the row, charges credits, runs the provider,\nand lands it in done/failed. Clients poll `GET /generations/{id}` for\nupdates.",
         "operationId": "create_generation_generations_post",
         "requestBody": {
           "content": {
@@ -336,11 +458,11 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/GenerationOutput"
+                  "$ref": "#/components/schemas/GenerationResponse"
                 }
               }
             },
@@ -363,6 +485,55 @@
           }
         ],
         "summary": "Create Generation",
+        "tags": [
+          "generations"
+        ]
+      }
+    },
+    "/generations/{generation_id}": {
+      "get": {
+        "description": "Fetch one generation. Returns 404 if it isn't the caller's row.",
+        "operationId": "get_generation_generations__generation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "generation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Generation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Generation",
         "tags": [
           "generations"
         ]

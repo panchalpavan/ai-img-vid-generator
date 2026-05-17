@@ -11,13 +11,41 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Generations
+         * @description List the caller's generations, newest first.
+         */
+        get: operations["list_generations_generations_get"];
         put?: never;
         /**
          * Create Generation
-         * @description Run a generation synchronously against the selected model.
+         * @description Submit a new generation. Returns immediately with status=pending.
+         *
+         *     The Celery worker picks up the row, charges credits, runs the provider,
+         *     and lands it in done/failed. Clients poll `GET /generations/{id}` for
+         *     updates.
          */
         post: operations["create_generation_generations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/generations/{generation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Generation
+         * @description Fetch one generation. Returns 404 if it isn't the caller's row.
+         */
+        get: operations["get_generation_generations__generation_id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -163,19 +191,51 @@ export interface components {
             text?: string | null;
         };
         /**
-         * GenerationOutput
-         * @description Result of a synchronous generation call.
+         * GenerationResponse
+         * @description Public-facing shape of a Generation row.
          *
-         *     Sprint 3 will add an async variant (`JobHandle`) for providers like
-         *     Sjinn that return a task ID instead of a finished result.
+         *     Mirrors the DB columns we want to expose. Excludes user_id (already
+         *     implicit via auth) and inputs (already in `prompt` for Sprint 3).
          */
-        GenerationOutput: {
-            output_type: components["schemas"]["OutputType"];
-            /** Text */
-            text?: string | null;
-            /** Url */
-            url?: string | null;
+        GenerationResponse: {
+            /** Cost In Credits */
+            cost_in_credits: number;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Error */
+            error: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Model Id */
+            model_id: string;
+            /** Prompt */
+            prompt: string;
+            /** Result Text */
+            result_text: string | null;
+            /** Result Url */
+            result_url: string | null;
+            status: components["schemas"]["GenerationStatus"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
+        /**
+         * GenerationStatus
+         * @description Lifecycle of a generation row.
+         *
+         *     Stored as VARCHAR for the same reason TransactionType is — Alembic
+         *     migrations of Postgres ENUMs are notoriously painful.
+         * @enum {string}
+         */
+        GenerationStatus: "pending" | "processing" | "done" | "failed";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -277,6 +337,38 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_generations_generations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_generation_generations_post: {
         parameters: {
             query?: never;
@@ -291,12 +383,43 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_generation_generations__generation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GenerationOutput"];
+                    "application/json": components["schemas"]["GenerationResponse"];
                 };
             };
             /** @description Validation Error */

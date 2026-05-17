@@ -21,8 +21,10 @@ export type InputType = components["schemas"]["InputType"];
 export type OutputType = components["schemas"]["OutputType"];
 export type ProviderName = components["schemas"]["ProviderName"];
 export type GenerationInput = components["schemas"]["GenerationInput"];
-export type GenerationOutput = components["schemas"]["GenerationOutput"];
 export type CreateGenerationRequest = components["schemas"]["CreateGenerationRequest"];
+// Sprint 3 — async pipeline
+export type GenerationResponse = components["schemas"]["GenerationResponse"];
+export type GenerationStatus = components["schemas"]["GenerationStatus"];
 
 // ---------------------------------------------------------------------------
 // Per-endpoint shapes — useful when building a typed fetch wrapper later.

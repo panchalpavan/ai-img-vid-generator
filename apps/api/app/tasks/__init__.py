@@ -46,3 +46,8 @@ def ping() -> str:
     Useful as a "is the worker alive and consuming jobs?" probe.
     """
     return "pong"
+
+
+# Side-effect import so Celery autodiscovers tasks defined in other modules.
+# Each new task file under app/tasks/ should be imported here.
+from app.tasks import generation  # noqa: E402, F401
