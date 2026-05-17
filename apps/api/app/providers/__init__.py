@@ -10,6 +10,7 @@ frontend form, /generations endpoint, and credit logic all read from
 from app.core.config import settings
 from app.providers.base import ModelRegistry, ProviderAdapter
 from app.providers.google_ai_studio import GoogleAIStudioAdapter
+from app.providers.pollinations import PollinationsAdapter
 from app.providers.types import (
     GenerationInput,
     GenerationOutput,
@@ -39,6 +40,41 @@ registry.register(
         is_async=False,
     ),
     _google_adapter,
+)
+
+registry.register(
+    ModelConfig(
+        id="gemini-2.5-flash-image",
+        provider=ProviderName.GOOGLE_AI_STUDIO,
+        display_name="Gemini 2.5 Flash Image (Nano Banana)",
+        input_types=[InputType.TEXT],
+        output_type=OutputType.IMAGE,
+        # Higher cost than text — generating an image uses more compute.
+        # Round number for now; we can revisit when Stripe-priced credits
+        # exist (Sprint 5).
+        cost_in_credits=2,
+        is_async=False,
+    ),
+    _google_adapter,
+)
+
+
+# ---- Pollinations.ai: free FLUX-backed image generation, no auth -------
+# Last-resort fallback when other providers are quota-blocked. See
+# parking-lot notes in docs/SPRINTS.md for the cascade strategy.
+_pollinations_adapter = PollinationsAdapter()
+
+registry.register(
+    ModelConfig(
+        id="pollinations-flux",
+        provider=ProviderName.POLLINATIONS,
+        display_name="Pollinations FLUX (free, no auth)",
+        input_types=[InputType.TEXT],
+        output_type=OutputType.IMAGE,
+        cost_in_credits=2,
+        is_async=False,
+    ),
+    _pollinations_adapter,
 )
 
 

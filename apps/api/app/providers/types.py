@@ -26,6 +26,8 @@ class ProviderName(StrEnum):
     GOOGLE_AI_STUDIO = "google-ai-studio"
     VERTEX_AI = "vertex-ai"
     SJINN = "sjinn"
+    POLLINATIONS = "pollinations"
+    CLOUDFLARE_WORKERS_AI = "cloudflare-workers-ai"
 
 
 class InputType(StrEnum):

@@ -319,7 +319,9 @@
         "enum": [
           "google-ai-studio",
           "vertex-ai",
-          "sjinn"
+          "sjinn",
+          "pollinations",
+          "cloudflare-workers-ai"
         ],
         "title": "ProviderName",
         "type": "string"

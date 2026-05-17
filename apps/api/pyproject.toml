@@ -92,10 +92,11 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # google-generativeai (Gemini SDK) ships a partial py.typed marker but
-# doesn't explicitly re-export top-level symbols like `configure` and
-# `GenerativeModel`. Disable attr-defined only for our adapter file.
+# its types are inconsistent (top-level symbols not re-exported, generation
+# config accepts plain dict but typed as a specific class). Scope the
+# leniency to our adapter file.
 module = "app.providers.google_ai_studio"
-disable_error_code = ["attr-defined"]
+disable_error_code = ["attr-defined", "arg-type"]
 
 # ---------------------------------------------------------------------------
 # pytest

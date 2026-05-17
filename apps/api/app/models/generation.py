@@ -50,9 +50,11 @@ class Generation(SQLModel, table=True):
 
     # Result fields — exactly one of these is set on success, depending on
     # the model's output_type. result_url stores either an R2 URL (when
-    # binary uploads land in a later sprint) or a data URI as a stopgap.
+    # binary uploads land in a later sprint) or a base64 data URI as a
+    # stopgap. Length cap is generous (~10MB) because base64-encoded
+    # images can easily exceed 100KB.
     result_text: str | None = None
-    result_url: str | None = Field(default=None, max_length=4096)
+    result_url: str | None = Field(default=None, max_length=10_485_760)
 
     # Human-readable error captured when status == FAILED.
     error: str | None = Field(default=None, max_length=2048)

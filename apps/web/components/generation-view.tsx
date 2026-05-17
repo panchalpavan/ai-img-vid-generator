@@ -91,12 +91,31 @@ export function GenerationView() {
     />
   );
 
+  // Reset the mutation state (and incidentally stop polling, since
+  // useGeneration's `enabled` depends on generate.data?.id). The textarea
+  // is intentionally NOT cleared — the user may want to tweak and retry.
+  // The DB row for the previous generation stays; we'll show it in a
+  // "history" gallery later.
+  function clearResult() {
+    generate.reset();
+  }
+
   // Has-anything-yet layout: result/inflight area on top, bar pinned bottom.
   if (showResultArea) {
     return (
       <div className="flex h-[calc(100vh-3.5rem)] flex-col items-center">
         <div className="w-full flex-1 overflow-y-auto px-4 py-8">
-          <div className="mx-auto w-full max-w-3xl">
+          <div className="mx-auto w-full max-w-3xl space-y-4">
+            <div className="flex justify-start">
+              <button
+                type="button"
+                onClick={clearResult}
+                disabled={isInflight}
+                className="cursor-pointer rounded-full border border-border bg-background px-3 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                ← New generation
+              </button>
+            </div>
             <GenerationStateView
               postError={generate.error}
               generation={generation.data}
@@ -206,6 +225,14 @@ function GenerationStateView({
 }
 
 function ResultCard({ generation }: { generation: GenerationResponse }) {
+  // result_url can be either a data: URI (Sprint 3.5 stopgap) or an https
+  // URL (once R2 storage lands). Treat anything starting with `data:image/`
+  // or ending in a known image extension as an image to inline.
+  const isImageUrl =
+    !!generation.result_url &&
+    (generation.result_url.startsWith("data:image/") ||
+      /\.(png|jpe?g|webp|gif|avif)(\?|$)/i.test(generation.result_url));
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-border/60 bg-muted/30 p-4 text-sm text-muted-foreground">
@@ -221,7 +248,19 @@ function ResultCard({ generation }: { generation: GenerationResponse }) {
             {generation.result_text}
           </p>
         )}
-        {generation.result_url && (
+        {isImageUrl && (
+          // Plain <img> intentionally — Next.js <Image> doesn't optimize
+          // data: URIs, and we don't know the dimensions ahead of time.
+          // When R2 lands and result_url becomes a real CDN URL, we can
+          // revisit using <Image> for resizing.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={generation.result_url ?? ""}
+            alt={generation.prompt}
+            className="max-h-[70vh] w-full rounded-lg object-contain"
+          />
+        )}
+        {generation.result_url && !isImageUrl && (
           <a
             href={generation.result_url}
             target="_blank"
@@ -253,11 +292,79 @@ function PendingCard({ label, prompt }: { label: string; prompt?: string }) {
   );
 }
 
+/**
+ * Maps a raw upstream error string to a friendly heading + suggestion.
+ * The raw message goes under a collapsed "Show details" toggle so users
+ * see actionable copy first, not a wall of protobuf-looking text.
+ */
+function parseError(message: string): {
+  headline: string;
+  suggestion: string | null;
+} {
+  if (/quota|rate.?limit|\b429\b|exceeded.*limit/i.test(message)) {
+    return {
+      headline: "Rate limit hit.",
+      suggestion:
+        "This model's free quota is exhausted. Try a different model from the dropdown — Pollinations FLUX has no quota.",
+    };
+  }
+  if (/\b50[023]\b|unavailable|temporarily/i.test(message)) {
+    return {
+      headline: "Provider is unavailable.",
+      suggestion: "The AI provider is having issues. Try again in a minute.",
+    };
+  }
+  if (/insufficient credits/i.test(message)) {
+    return {
+      headline: "Not enough credits.",
+      suggestion: "Buy more credits (Sprint 5) or use a model with a lower cost.",
+    };
+  }
+  if (/\b403\b|forbidden/i.test(message)) {
+    return {
+      headline: "Request blocked by the provider.",
+      suggestion:
+        "The provider rejected the request — possibly bot detection or a missing key. Try a different model from the dropdown.",
+    };
+  }
+  if (/unauthor|\b401\b/i.test(message)) {
+    return {
+      headline: "Authentication problem.",
+      suggestion: "Sign out and back in. If that doesn't help, the provider key may be invalid.",
+    };
+  }
+  // Fallback: first line of the message, truncated.
+  return {
+    headline: message.split("\n")[0].slice(0, 160),
+    suggestion: null,
+  };
+}
+
 function ErrorCard({ title, message }: { title: string; message: string }) {
+  const [showDetails, setShowDetails] = useState(false);
+  const friendly = parseError(message);
+
   return (
-    <div className="rounded-2xl border border-destructive/50 bg-destructive/10 p-5 text-sm text-destructive">
-      <p className="mb-1 text-xs uppercase tracking-wide opacity-70">{title}</p>
-      <p className="whitespace-pre-wrap">{message}</p>
+    <div className="rounded-2xl border border-destructive/40 bg-destructive/5 p-5 text-sm">
+      <p className="mb-2 text-xs uppercase tracking-wide text-destructive/80">
+        {title}
+      </p>
+      <p className="font-medium text-destructive">{friendly.headline}</p>
+      {friendly.suggestion && (
+        <p className="mt-2 text-foreground/80">{friendly.suggestion}</p>
+      )}
+      <button
+        type="button"
+        onClick={() => setShowDetails((v) => !v)}
+        className="mt-3 cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:underline"
+      >
+        {showDetails ? "Hide details" : "Show technical details"}
+      </button>
+      {showDetails && (
+        <pre className="mt-2 max-h-60 overflow-auto rounded-md border border-border/50 bg-background/50 p-3 text-xs whitespace-pre-wrap text-muted-foreground">
+          {message}
+        </pre>
+      )}
     </div>
   );
 }

@@ -314,7 +314,7 @@ export interface components {
          * @description The AI services we can route to.
          * @enum {string}
          */
-        ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn";
+        ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn" | "pollinations" | "cloudflare-workers-ai";
         /** ValidationError */
         ValidationError: {
             /** Context */

@@ -1,5 +1,8 @@
 """Gemini provider — Google AI Studio (free tier, no GCP billing required).
 
+Handles both text-output models (e.g., `gemini-2.5-flash`) and image-output
+models (e.g., `gemini-2.5-flash-image` — "Nano Banana").
+
 In Sprint 7 we migrate to Vertex AI for production (same models, GCP-native
 auth + billing). Because both providers go through the registry, that swap
 is a new adapter file + one registry entry, not a UI/pipeline rewrite.
@@ -8,32 +11,20 @@ Auth: API key from https://aistudio.google.com/apikey, stored in env as
 GOOGLE_API_KEY (read by app.core.config.settings).
 """
 
-from typing import TYPE_CHECKING
+import base64
 
 from app.providers.types import GenerationInput, GenerationOutput, OutputType
 
-if TYPE_CHECKING:
-    # The Google SDK is not type-checked (no stubs), so we hide its import
-    # from mypy. Runtime imports happen lazily inside `generate` to avoid
-    # SDK initialization at module-import time (and to make the case where
-    # GOOGLE_API_KEY is unset fail at use-time, not at import-time).
-    pass
-
 
 class GoogleAIStudioAdapter:
-    """Adapter that calls Gemini text models via google-generativeai SDK."""
+    """Adapter for Gemini text + image models via google-generativeai SDK."""
 
     def __init__(self, api_key: str | None) -> None:
         self._api_key = api_key
         self._configured = False
 
     def _ensure_configured(self) -> None:
-        """Lazy one-time SDK configuration.
-
-        Doing this at first-use instead of at adapter construction means the
-        app boots even when GOOGLE_API_KEY is unset — useful in CI or when
-        only the non-Gemini paths are exercised.
-        """
+        """Lazy one-time SDK configuration."""
         if self._configured:
             return
         if not self._api_key:
@@ -47,20 +38,56 @@ class GoogleAIStudioAdapter:
         self._configured = True
 
     def generate(self, model_id: str, inputs: GenerationInput) -> GenerationOutput:
-        """Run a synchronous text-to-text generation against Gemini.
+        """Run a synchronous generation against the named Gemini model.
 
-        Image inputs (multimodal) land in Sprint 4 with the Reference
-        Library. For now: text in, text out.
+        Routes by model_id: anything with "image" in the name asks Gemini to
+        return the IMAGE modality and we parse `inline_data` from the
+        response into a base64 data URI. Other models return text.
+
+        The data-URI approach is a Sprint 3.5 stopgap — when R2 storage
+        lands, we'll upload the bytes and return an https URL. Everything
+        else (registry, response shape, frontend) stays the same.
         """
         self._ensure_configured()
 
         if not inputs.text:
-            raise ValueError("Gemini text models require a 'text' input.")
+            raise ValueError("Gemini text input is required.")
 
         import google.generativeai as genai
 
         model = genai.GenerativeModel(model_id)
-        response = model.generate_content(inputs.text)
-        # `response.text` raises if the response was blocked or has no
-        # candidates. Let it propagate — /generations turns it into HTTP 502.
+        is_image_model = "image" in model_id
+
+        if is_image_model:
+            # response_modalities tells Gemini to produce IMAGE bytes (and
+            # optionally a TEXT description alongside, useful for alt text
+            # in the future).
+            response = model.generate_content(
+                inputs.text,
+                generation_config={"response_modalities": ["TEXT", "IMAGE"]},
+            )
+        else:
+            response = model.generate_content(inputs.text)
+
+        # Image path: scan the response parts for inline_data and return
+        # the first image we find as a base64 data URI.
+        if is_image_model and response.candidates:
+            for part in response.candidates[0].content.parts:
+                inline = getattr(part, "inline_data", None)
+                if inline and getattr(inline, "data", None):
+                    b64 = base64.b64encode(inline.data).decode("ascii")
+                    return GenerationOutput(
+                        output_type=OutputType.IMAGE,
+                        url=f"data:{inline.mime_type};base64,{b64}",
+                    )
+            # Image model but no image part returned — likely the model
+            # produced only text (e.g., a safety refusal). Surface that.
+            return GenerationOutput(
+                output_type=OutputType.TEXT,
+                text=response.text or "(no image returned)",
+            )
+
+        # Text path: `response.text` raises if the response was blocked or
+        # has no candidates. Let it propagate — /generations turns it into
+        # an HTTP error.
         return GenerationOutput(output_type=OutputType.TEXT, text=response.text)
