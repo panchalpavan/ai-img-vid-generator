@@ -279,6 +279,12 @@ To be decided before Sprint 7 begins.
 
 - **Video generation.** Free-tier video gen does not realistically exist in 2026. Plan stays: Sjinn integration in Sprint 6. Until then, no video model is registered.
 
+- **SSE for streaming text models (deliberate non-choice for Sprint 3).** Sprint 3 uses polling (`useGeneration` GETs `/generations/{id}` every 1s until terminal). For text models that support streaming (Gemini, GPT, Claude), Server-Sent Events would let tokens appear word-by-word like ChatGPT — meaningfully nicer UX. Implementation:
+  - Backend: switch `model.generate_content()` to `stream=True`, return `StreamingResponse` with `text/event-stream` content type, yield `data: {"delta":"..."}` lines per token.
+  - Frontend: use `fetch` with a `ReadableStream` reader (or `EventSource` for simpler cases); append deltas to local state.
+  - ~3-4 hours of work. Coexists with polling — streaming models stream, atomic models (image, video) keep polling.
+  - **Why we're not doing it in Sprint 3:** the polling pattern is what Sjinn and image/video gen need anyway. Validating it first is the right order. SSE is a UX polish layered on top, not an alternative architecture.
+
 - Video timeline editor
 - Public generation gallery / profiles
 - Batch generations
