@@ -1,7 +1,7 @@
 # Sprint Plan — img-vid-generation
 
-> Last updated: 2026-05-16
-> Current sprint: Sprint 1 (Identity & Wallet) — **complete end-to-end**. Sprint 2 (Adaptive Model Layer) is next.
+> Last updated: 2026-05-18
+> Current sprint: Sprints 0.5 → 3.5 **all complete end-to-end**. Sprint 4 (Reference Library) is next.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
 >
 > **Completed sprints (with verification):**
@@ -12,6 +12,9 @@
 > - Sprint 1.4 — `GET /me` endpoint with dev-email infinite-balance bypass.
 > - Sprint 1.5 — Frontend `useMe()` hook + `/api/auth/token` HttpOnly-cookie relay + TanStack Query provider.
 > - Sprint 1.6 — Shadcn/UI installed, `next-themes` system-preference dark mode, sticky navbar with credit badge + user menu, ADR-0012 written, system font stack (SF Pro on macOS).
+> - Sprint 2 — Adapter pattern: `app/providers/{types,base,google_ai_studio}.py`, `gemini-2.5-flash` registered. `GET /models`, `POST /generations` (initial sync version), dynamic Zod form. Replaced with prompt-bar in 2.x polish (Shadcn pill, model dropdown, auto-resize textarea, system-font, "cursor-pointer" applied globally to Shadcn Button + DropdownMenuItem).
+> - Sprint 3 — Async pipeline. `generations` table (status pending/processing/done/failed, prompt, result_text, result_url, cost_in_credits, error, timestamps). Celery task `run_generation` with credit deduction + refund-on-failure (uses generation_id as CreditTransaction reference_id — closes the Sprint 2 TODO). `POST /generations` enqueues + returns pending row; `GET /generations/{id}` for polling (owner-scoped 404); `GET /generations` list endpoint. Frontend `useGenerate` (mutation) + `useGeneration(id)` polling at 1Hz. `GenerationView` shows pending/processing/done/failed with bar pinned bottom; "← New generation" reset button.
+> - Sprint 3.5 (ad-hoc, in-between) — Image generation cascade: `gemini-2.5-flash-image` registered (Nano Banana — currently quota-blocked on user's free tier with `limit: 0`) + `pollinations-flux` registered (PollinationsAdapter, stdlib urllib, **requires User-Agent + Referer headers to bypass Cloudflare bot detection**). Adapter routes text vs image responses by model_id substring "image". `result_url` widened to VARCHAR(10MB) to hold base64 data URIs. Frontend renders inline `<img>` for data:image URIs. ErrorCard now has friendly parser + collapsible "Show technical details".
 
 ## Architecture summary
 
@@ -185,41 +188,52 @@ Auth flow: Next.js handles Google OAuth via Auth.js, issues a JWT, includes it a
 
 ---
 
-## Sprint 3 — Storage, Job Queue, Async Pipeline
+## Sprint 3 — Async Pipeline (DONE — R2 deliberately deferred)
 
-**Goal:** Generations are persisted to R2 and run on Celery workers. Long jobs do not block HTTP requests.
+**Goal as originally written:** Generations are persisted to R2 and run on Celery workers. Long jobs do not block HTTP requests.
+**Actual scope:** Async pipeline + Celery worker + polling. **R2 deferred** because the only registered model at start of Sprint 3 was text-output (text gets stored in `result_text` column). R2 will land in Sprint 4 alongside reference uploads, or earlier if needed.
 
-### Tasks
+### What shipped
 
-#### 3.1 — R2 setup
-- `boto3` configured for R2 (S3-compatible endpoint)
-- `apps/api/app/storage/r2.py` with `upload_bytes(key, data) -> url`
-- **Learn:** S3 API via boto3, presigned URLs, R2 endpoint quirks
+- ✅ **`generations` table** (`apps/api/app/models/generation.py`) — `id`, `user_id`, `model_id`, `prompt`, `status` (VARCHAR via `sa_column` trick, same as TransactionType), `result_text`, `result_url` (10MB), `error`, `cost_in_credits` (snapshot), timestamps. Alembic migration `1fc6b05d4ba6` + `a32c5a26fc53` (later widening for base64).
+- ✅ **Celery task `run_generation`** (`apps/api/app/tasks/generation.py`) — idempotent (no-ops on terminal status); credit deduction with SELECT FOR UPDATE on profiles; auto-refund on provider failure; dev-user bypass.
+- ✅ **POST `/generations` refactored to async** — returns 201 with pending row.
+- ✅ **GET `/generations/{id}`** — owner-scoped (404 on foreign rows to avoid existence leak).
+- ✅ **GET `/generations`** — paginated list (limit/offset), newest first.
+- ✅ **Frontend `useGenerate`** — mutation that primes ["generation", id] cache; invalidates ["me"].
+- ✅ **Frontend `useGeneration(id)`** — polls every 1s; stops at terminal status; invalidates ["me"] on terminal transition.
+- ✅ **`GenerationView`** — empty (hero+centered bar) / inflight / done / failed states; "← New generation" reset button.
 
-#### 3.2 — `generations` table
-- SQLModel: `id`, `user_id`, `model_id`, `status` (`pending`/`processing`/`done`/`failed`), `inputs` (jsonb), `result_url`, `error`, timestamps
-- Alembic migration `002_generations`
-- **Learn:** JSONB columns in Postgres, status enum design
+### Deferred to later
 
-#### 3.3 — Celery task: `run_generation`
-- Task signature: `run_generation(generation_id)`
-- Loads row, calls provider, uploads result to R2, updates row to `done`
-- Retry policy with exponential backoff on transient errors
-- **Learn:** Celery task lifecycle, retries, idempotency
+- 🔲 **R2 setup** — moves to Sprint 4 (Reference Library needs R2 for uploads anyway, so they bundle naturally). Image outputs currently use base64 data URIs as a stopgap.
+- 🔲 **"My Generations" gallery UI** — the `GET /generations` endpoint exists; the visual history view does not. Easy add when needed.
+- 🔲 **Retry policy with exponential backoff** — Celery's default retry behavior is in place; explicit policies wait for a real reliability need.
 
-#### 3.4 — Refactor `POST /generations` to async
-- Creates `pending` row, enqueues Celery task, returns `{id, status}`
-- New `GET /generations/{id}` endpoint for polling status
-- **Learn:** The async pattern that scales to Sjinn unchanged
+**Decision checkpoint after Sprint 3:** D8 — Reference Library scope (image-only vs RAG). Still pending.
 
-#### 3.5 — Frontend polling + gallery
-- TanStack Query polls `GET /generations/{id}` until `status === "done"`
-- "My Generations" gallery via `GET /generations`
-- **Learn:** Polling with TanStack Query, cache invalidation
+---
 
-**Sprint 3 done when:** Submit a generation, see "pending" spinner, watch it move to "done" with the R2 result image displayed. Refresh — still there.
+## Sprint 3.5 — Image Generation Cascade (ad-hoc, between Sprint 3 and Sprint 4)
 
-**Decision checkpoint after Sprint 3:** D8 — Reference Library scope (image-only vs RAG).
+Tiny mini-sprint added because the app's whole purpose is image+video and Sprint 3 left it text-only.
+
+### What 3.5 shipped
+
+- ✅ Registered `gemini-2.5-flash-image` (Nano Banana) — output_type=IMAGE, cost=2. **Note: user's AI Studio free tier has `limit: 0` for this model.** Stays registered for when quota improves.
+- ✅ Registered `pollinations-flux` — `PollinationsAdapter` (stdlib urllib, ~60 LOC). **Working** end-to-end with image rendering inline.
+- ✅ Adapter routes by `"image" in model_id` substring; for image models it adds `response_modalities=["TEXT","IMAGE"]` to Gemini's config, parses `inline_data` from response parts, builds `data:{mime_type};base64,...` URI.
+- ✅ Migration `a32c5a26fc53` widens `generations.result_url` to VARCHAR(10MB) for base64.
+- ✅ `ResultCard` renders inline `<img>` when `result_url` starts with `data:image/` or has an image extension; falls back to `<a>` for arbitrary URLs.
+- ✅ `ErrorCard` rewritten — `parseError()` maps common upstream errors (rate limit, provider unavailable, 403, 401, insufficient credits) to a friendly headline + suggestion; raw error under "Show technical details" toggle.
+- ✅ "← New generation" reset button on the result view.
+
+### 3.5 deferred (parked)
+
+- 🔲 **Cloudflare Workers AI provider** — better-quality middle tier; user doesn't have a CF account yet. See parking lot.
+- 🔲 **Migrate from `google.generativeai` to `google.genai`** — the SDK we use is deprecated in 2026; migration is a single-file change. Parked.
+
+---
 
 ---
 
