@@ -301,6 +301,10 @@ To be decided before Sprint 7 begins.
 
 ---
 
+## Open business-logic questions (flagged, not yet decided)
+
+- **Refund-on-storage-failure (flagged 2026-05-21, Sprint 4A.2).** Currently, if the provider call succeeds but the R2 upload fails, we refund the user's credits and mark the row FAILED. Open question: is that the right policy? Provider compute *did* happen (we paid Seegen, we used Pollinations bandwidth), so a strict reading says credits should still be charged. Counter-argument: from the user's perspective they got no usable output, so refunding is the empathic call. Likely revisited around Sprint 5 (Stripe) when real money is in the loop. Also relevant: partial-success cases (Sjinn might produce a usable preview but fail final upload).
+
 ## Parking Lot
 
 - **Migrate Gemini adapter from `google.generativeai` to `google.genai`.** The old SDK is deprecated as of 2026; current code works but should migrate before the deprecation becomes removal. Single-file change in `apps/api/app/providers/google_ai_studio.py`.
