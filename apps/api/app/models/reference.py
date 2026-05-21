@@ -10,9 +10,9 @@ Object keys include the user_id so the cleanup job can scope by prefix
 when we add it.
 
 Note: `references` is a reserved word in SQL (used in foreign-key
-constraints). Postgres still allows it as a table name; SQLAlchemy quotes
-it automatically in emitted DDL. If we hit a tool that chokes on it later,
-the rename is a single migration.
+constraints). Postgres allows it as a table name unquoted in DDL; SQLAlchemy
+auto-quotes when it emits ORM SQL. Raw SQL (like a hand-written op.execute
+in a migration) must quote it as "references". Logged in docs/GOTCHAS.md.
 """
 
 from datetime import UTC, datetime

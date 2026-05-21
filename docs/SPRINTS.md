@@ -1,7 +1,7 @@
 # Sprint Plan — img-vid-generation
 
 > Last updated: 2026-05-22
-> Current sprint: Sprints 0.5 → 4A **all complete end-to-end**. Sprint 4B (pgvector RAG) is next.
+> Current sprint: Sprints 0.5 → 4A **all complete end-to-end**. Sprint 4B (pgvector RAG) **parked — no real use case for an image-gen app**. Sprint 5 (Stripe) is next.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
 >
 > **Completed sprints (with verification):**
@@ -259,30 +259,20 @@ D8 decided 2026-05-21: image refs **and** document RAG. Phased so each phase shi
 - ✅ **4A.3** — Reference upload via **presigned PUT URLs** (direct browser → R2, not proxied through FastAPI). Three-step flow: `POST /references/presign` → browser `PUT` to R2 with bound Content-Type → `POST /references/{id}/complete` (backend HEADs R2 to verify size before INSERT). Bucket CORS configured via `scripts/setup_r2_cors.py`. `references` SQLModel + Alembic `352086a915a3`. Frontend: `useUploadReference` orchestrator, file picker + thumbnail strip in PromptBar, sequential upload of multi-file picks.
 - ✅ **4A.4** — Refs flow into `GenerationInput.image_urls` from the frontend; Seegen adapter passes them through as the `urls` array (image-to-image mode). Other adapters (Pollinations, Gemini text) ignore `image_urls` — no special-casing.
 
-### Sprint 4B — Document RAG (pgvector) — NEXT
+### Sprint 4B — Document RAG (pgvector) — PARKED 2026-05-22
 
-**Ship checkpoint:** "upload brand-guide.pdf, ask 'generate a logo in this style' → image grounded in retrieved style guidelines."
+**Decision:** scope-cut. After scaffolding 4B.1 (pgvector extension + chunks table + HNSW index) we paused to re-examine the actual user story and found none — for an image-generation app, "references" are almost always *other images*, which 4A already handles. PDF/document uploads were a learning vehicle, not a product requirement.
 
-Architectural decisions (locked in 2026-05-22):
+Everything from 4B.1 was rolled back cleanly:
 
-| ID | Decision | Choice |
-|----|----------|--------|
-| B-1 | Image vs document refs in schema | **Single `references` table**, add `kind: image\|document` + `extracted_text TEXT NULL`. Shared upload/storage/delete flow; the kind column gates post-processing. |
-| B-2 | Chunk storage | **Separate `reference_chunks` table** — `(id, reference_id FK, chunk_index, text, embedding vector(768), token_count)`. One doc → many chunks; embeddings live on chunks. |
-| B-3 | Embedding model | **Gemini `text-embedding-004`** — 768 dims, free tier already in `GOOGLE_API_KEY`, batchable. Avoid OpenAI paid tier for now. |
-| B-4 | Chunking strategy | **Fixed-size with overlap** — ~1000 chars / ~200 char overlap, paragraph→sentence→word break preference. Simple; revisit if quality suffers. |
-| B-5 | Retrieval injection point | **Augment the text prompt** in the Celery task before adapter call: prepend `Style guidelines from your references:\n- chunk1\n- chunk2…\n\nUser request: {prompt}`. Adapters still see prompt+image_urls, unaware of RAG. |
+- Alembic downgraded → migration file deleted.
+- `Reference` model reverted to its 4A.3 shape (no `kind`, no `extracted_text`).
+- `pgvector` Python dep removed.
+- `pgvector.*` mypy override removed.
 
-Tasks:
+The 5 locked architectural decisions (single-table discriminator, separate chunks table, Gemini text-embedding-004, fixed-size chunking, retrieval injection in the Celery task) are preserved here for if/when a real RAG use case appears — a "knowledge base" feature, a brand-style library, or a future document-Q&A pivot. Re-entering 4B from this design would take roughly the same effort whether started now or later, but **later** has the advantage of being driven by a concrete use case instead of "the obvious next thing in the plan."
 
-- **4B.1** — Alembic: enable pgvector extension, add `kind`/`extracted_text` to `references`, create `reference_chunks` table with `vector(768)` + ivfflat (or hnsw) index for fast similarity search.
-- **4B.2** — File type expansion: backend allowlist gains `text/plain` and `application/pdf`. PDF text extraction via `pypdf` (lightweight, no OCR — OCR can come later if needed).
-- **4B.3** — Chunking + embedding pipeline. Runs as a new Celery task `embed_reference(reference_id)` kicked off after `/references/{id}/complete` returns. Upload latency stays low; embedding becomes a background concern.
-- **4B.4** — Retrieval step. Before adapter call: embed the user's prompt, find top-k chunks (default k=5) for that user's documents via `embedding <-> query_embedding` similarity, prepend as context. Configurable via `RAG_TOP_K` env.
-- **4B.5** — References gallery page. Card per reference: image thumbnail (for `kind=image`) or doc icon + first chunk preview (for `kind=document`). Delete from gallery.
-- **4B.6** — New ADR: pgvector + retrieval design (chunking choices, distance metric, index type, why we run embedding in the Celery worker not the request thread).
-
-ADR-0005 (provider adapter pattern) stays untouched — RAG augmentation happens above the adapter layer, so adapters remain ignorant of the difference between a hand-typed prompt and a RAG-augmented one.
+Sprint 5 (Stripe + monetization) is now next.
 
 ---
 

@@ -98,6 +98,7 @@ ignore_missing_imports = true
 module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
+
 [[tool.mypy.overrides]]
 # google-generativeai (Gemini SDK) ships a partial py.typed marker but
 # its types are inconsistent (top-level symbols not re-exported, generation
