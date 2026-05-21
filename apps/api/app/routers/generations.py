@@ -93,6 +93,15 @@ def create_generation(
             detail=str(exc),
         ) from None
 
+    if not config.enabled:
+        # Treat disabled models as 404 — the model dropdown shouldn't have
+        # offered it in the first place, so a request for it is a stale
+        # client or a hand-rolled call.
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Model {req.model_id!r} is not currently available.",
+        )
+
     # Validate inputs against the model's declared input_types.
     if InputType.TEXT in config.input_types and not req.inputs.text:
         raise HTTPException(

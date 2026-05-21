@@ -132,7 +132,7 @@ export interface paths {
         };
         /**
          * List Models
-         * @description Return every model the frontend can offer.
+         * @description Return every enabled model the frontend can offer.
          */
         get: operations["list_models_models_get"];
         put?: never;
@@ -294,6 +294,11 @@ export interface components {
             cost_in_credits: number;
             /** Display Name */
             display_name: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
             /** Id */
             id: string;
             /** Input Types */
@@ -314,7 +319,7 @@ export interface components {
          * @description The AI services we can route to.
          * @enum {string}
          */
-        ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn" | "pollinations" | "cloudflare-workers-ai";
+        ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn" | "pollinations" | "cloudflare-workers-ai" | "seegen";
         /** ValidationError */
         ValidationError: {
             /** Context */

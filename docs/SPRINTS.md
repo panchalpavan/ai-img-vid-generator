@@ -233,6 +233,11 @@ Tiny mini-sprint added because the app's whole purpose is image+video and Sprint
 - 🔲 **Cloudflare Workers AI provider** — better-quality middle tier; user doesn't have a CF account yet. See parking lot.
 - 🔲 **Migrate from `google.generativeai` to `google.genai`** — the SDK we use is deprecated in 2026; migration is a single-file change. Parked.
 
+### 3.5.1 — Seegen.ai provider + soft-disable switch (2026-05-21)
+
+- ✅ Registered `seegen-gpt-image-2` via new `SeegenAdapter` (`apps/api/app/providers/seegen.py`). **Job-based** API (`POST /jobs/createTask` → poll `/jobs/queryTask`); adapter blocks internally so the existing synchronous `ProviderAdapter` Protocol stays unchanged. 200 free credits at signup; ~5 test images at 2k/medium (35 of their credits each). Sprint 6's Sjinn integration will use the same job-based pattern, at which point we'll extend the Protocol with explicit `submit_async`/`poll_status` and have the Celery task re-enqueue itself between polls (vs the current "worker sleeps") — see ADR-0005 region.
+- ✅ Added `ModelConfig.enabled: bool = True`. Disabled models stay registered (code intact) but are hidden from `GET /models` and rejected by `POST /generations` (404). Flipped `gemini-2.5-flash-image` to `enabled=False` — quota-blocked on user's account.
+
 ---
 
 ---

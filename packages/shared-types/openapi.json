@@ -270,6 +270,11 @@
             "title": "Display Name",
             "type": "string"
           },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -321,7 +326,8 @@
           "vertex-ai",
           "sjinn",
           "pollinations",
-          "cloudflare-workers-ai"
+          "cloudflare-workers-ai",
+          "seegen"
         ],
         "title": "ProviderName",
         "type": "string"
@@ -614,7 +620,7 @@
     },
     "/models": {
       "get": {
-        "description": "Return every model the frontend can offer.",
+        "description": "Return every enabled model the frontend can offer.",
         "operationId": "list_models_models_get",
         "responses": {
           "200": {

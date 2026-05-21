@@ -14,5 +14,5 @@ router = APIRouter()
 
 @router.get("/models", response_model=list[ModelConfig], tags=["models"])
 def list_models() -> list[ModelConfig]:
-    """Return every model the frontend can offer."""
-    return registry.all_configs()
+    """Return every enabled model the frontend can offer."""
+    return [config for config in registry.all_configs() if config.enabled]

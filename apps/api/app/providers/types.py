@@ -28,6 +28,7 @@ class ProviderName(StrEnum):
     SJINN = "sjinn"
     POLLINATIONS = "pollinations"
     CLOUDFLARE_WORKERS_AI = "cloudflare-workers-ai"
+    SEEGEN = "seegen"
 
 
 class InputType(StrEnum):
@@ -67,6 +68,11 @@ class ModelConfig(BaseModel):
     output_type: OutputType
     cost_in_credits: int
     is_async: bool
+    # Soft-disable switch: registered models with enabled=False stay in the
+    # registry (code intact) but are hidden from GET /models and rejected by
+    # POST /generations. Use for quota-blocked or experimental models we don't
+    # want to delete.
+    enabled: bool = True
 
 
 class GenerationInput(BaseModel):

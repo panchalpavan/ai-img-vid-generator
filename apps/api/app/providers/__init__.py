@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.providers.base import ModelRegistry, ProviderAdapter
 from app.providers.google_ai_studio import GoogleAIStudioAdapter
 from app.providers.pollinations import PollinationsAdapter
+from app.providers.seegen import SeegenAdapter
 from app.providers.types import (
     GenerationInput,
     GenerationOutput,
@@ -54,8 +55,31 @@ registry.register(
         # exist (Sprint 5).
         cost_in_credits=2,
         is_async=False,
+        # Disabled: user's AI Studio free tier has `limit: 0` for this model.
+        # Flip back to True if/when quota is granted.
+        enabled=False,
     ),
     _google_adapter,
+)
+
+
+# ---- Seegen.ai: job-based image generation, metered free tier ----------
+# 200 credits at signup; 2k/medium ≈ 35 of their credits per image, so the
+# free tier is ~5 test images. Adapter blocks (polls internally) so the rest
+# of the app treats it as synchronous.
+_seegen_adapter = SeegenAdapter(api_key=settings.seegen_api_key)
+
+registry.register(
+    ModelConfig(
+        id="seegen-gpt-image-2",
+        provider=ProviderName.SEEGEN,
+        display_name="Seegen GPT-Image-2 (1k, medium)",
+        input_types=[InputType.TEXT],
+        output_type=OutputType.IMAGE,
+        cost_in_credits=2,
+        is_async=False,
+    ),
+    _seegen_adapter,
 )
 
 

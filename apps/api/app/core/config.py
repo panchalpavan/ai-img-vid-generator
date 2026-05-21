@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # which uses GCP IAM instead.
     google_api_key: str | None = None
 
+    # Seegen.ai API key — used by the Seegen provider adapter
+    # (apps/api/app/providers/seegen.py). Token format `zimg_...`.
+    # Get one at https://seegen.ai (free tier: 200 credits at signup).
+    seegen_api_key: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
