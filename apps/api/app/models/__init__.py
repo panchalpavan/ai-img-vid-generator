@@ -10,6 +10,7 @@ When adding a new model, add it to this file's re-exports.
 from app.models.credit_transaction import CreditTransaction, TransactionType
 from app.models.generation import Generation, GenerationStatus
 from app.models.profile import Profile
+from app.models.reference import Reference
 from app.models.user import User
 
 __all__ = [
@@ -17,6 +18,7 @@ __all__ = [
     "Generation",
     "GenerationStatus",
     "Profile",
+    "Reference",
     "TransactionType",
     "User",
 ]

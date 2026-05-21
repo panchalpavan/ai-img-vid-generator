@@ -11,7 +11,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from app.core.config import settings
-from app.models import credit_transaction, generation, profile, user  # noqa: F401
+from app.models import credit_transaction, generation, profile, reference, user  # noqa: F401
 from sqlalchemy import engine_from_config, pool
 from sqlmodel import SQLModel
 

@@ -19,7 +19,7 @@
  * chat app convention).
  */
 
-import { ArrowUp, ChevronDown, Loader2, Plus } from "lucide-react";
+import { ArrowUp, ChevronDown, Loader2, Plus, X } from "lucide-react";
 import { useEffect, useRef, type FormEvent, type KeyboardEvent } from "react";
 
 import {
@@ -29,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import type { ModelConfig } from "@/lib/api/types";
+import type { ModelConfig, ReferenceResponse } from "@/lib/api/types";
 
 interface PromptBarProps {
   text: string;
@@ -39,8 +39,19 @@ interface PromptBarProps {
   onModelChange: (id: string) => void;
   onSubmit: () => void;
   isPending: boolean;
+  // Sprint 4A.3 — staged references about to be submitted with the prompt.
+  // Owned by the parent so they persist across layout transitions and so
+  // the submit handler can pull their URLs.
+  references: ReferenceResponse[];
+  onPickFiles: (files: File[]) => void;
+  onRemoveReference: (id: string) => void;
+  isUploading: boolean;
   className?: string;
 }
+
+// Accept the same shapes the backend validates against. Keep in sync with
+// _ALLOWED_CONTENT_TYPES in apps/api/app/routers/references.py.
+const ACCEPTED_FILE_TYPES = "image/png,image/jpeg,image/webp";
 
 const MAX_TEXTAREA_HEIGHT_PX = 200;
 
@@ -52,9 +63,14 @@ export function PromptBar({
   onModelChange,
   onSubmit,
   isPending,
+  references,
+  onPickFiles,
+  onRemoveReference,
+  isUploading,
   className,
 }: PromptBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auto-resize the textarea up to MAX_TEXTAREA_HEIGHT_PX, then scroll.
   // Runs on every `text` change so paste / typing both reflow correctly.
@@ -82,6 +98,18 @@ export function PromptBar({
     }
   }
 
+  function openFilePicker() {
+    fileInputRef.current?.click();
+  }
+
+  function handleFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    onPickFiles(Array.from(list));
+    // Reset so picking the same file twice in a row still fires onChange.
+    e.target.value = "";
+  }
+
   return (
     <form
       onSubmit={handleFormSubmit}
@@ -90,6 +118,34 @@ export function PromptBar({
         className,
       )}
     >
+      {/* Staged reference thumbnails. Empty grid is fine — flex-wrap keeps
+          the row visible only when there's something to show. */}
+      {references.length > 0 && (
+        <div className="flex flex-wrap gap-2 px-1 pt-1">
+          {references.map((ref) => (
+            <div
+              key={ref.id}
+              className="group relative size-16 overflow-hidden rounded-lg border border-border bg-muted"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={ref.public_url}
+                alt={ref.filename}
+                className="size-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={() => onRemoveReference(ref.id)}
+                aria-label={`Remove ${ref.filename}`}
+                className="absolute right-0.5 top-0.5 inline-flex size-5 cursor-pointer items-center justify-center rounded-full bg-background/90 text-foreground shadow-sm opacity-0 transition-opacity hover:bg-background group-hover:opacity-100"
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       <textarea
         ref={textareaRef}
         value={text}
@@ -103,15 +159,31 @@ export function PromptBar({
 
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
-          {/* Attach button — placeholder, real upload lands in Sprint 4. */}
+          {/* Hidden file input — the visible + button below proxies clicks to
+              it. Hiding a real <input type="file"> is the standard pattern;
+              styling the native widget across browsers is otherwise painful. */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept={ACCEPTED_FILE_TYPES}
+            multiple
+            onChange={handleFilesPicked}
+            className="hidden"
+            aria-hidden="true"
+          />
           <button
             type="button"
-            disabled
-            title="Attachments coming in Sprint 4"
-            className="inline-flex size-9 cursor-not-allowed items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-muted disabled:opacity-60"
-            aria-label="Attach (coming soon)"
+            onClick={openFilePicker}
+            disabled={isUploading}
+            title={isUploading ? "Uploading…" : "Attach reference images"}
+            className="inline-flex size-9 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition-colors hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label="Attach reference images"
           >
-            <Plus className="size-4" />
+            {isUploading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Plus className="size-4" />
+            )}
           </button>
 
           {/* Model pill */}

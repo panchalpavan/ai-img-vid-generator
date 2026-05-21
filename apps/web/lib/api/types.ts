@@ -25,6 +25,11 @@ export type CreateGenerationRequest = components["schemas"]["CreateGenerationReq
 // Sprint 3 — async pipeline
 export type GenerationResponse = components["schemas"]["GenerationResponse"];
 export type GenerationStatus = components["schemas"]["GenerationStatus"];
+// Sprint 4A — reference library
+export type ReferenceResponse = components["schemas"]["ReferenceResponse"];
+export type PresignRequest = components["schemas"]["PresignRequest"];
+export type PresignResponse = components["schemas"]["PresignResponse"];
+export type CompleteRequest = components["schemas"]["CompleteRequest"];
 
 // ---------------------------------------------------------------------------
 // Per-endpoint shapes — useful when building a typed fetch wrapper later.

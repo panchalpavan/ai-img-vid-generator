@@ -23,7 +23,11 @@ import { PromptBar } from "@/components/prompt-bar";
 import { useGenerate } from "@/lib/api/use-generate";
 import { useGeneration } from "@/lib/api/use-generation";
 import { useModels } from "@/lib/api/use-models";
-import type { GenerationResponse } from "@/lib/api/types";
+import {
+  useDeleteReference,
+  useUploadReference,
+} from "@/lib/api/use-references";
+import type { GenerationResponse, ReferenceResponse } from "@/lib/api/types";
 
 const TERMINAL_STATUSES = new Set<GenerationResponse["status"]>([
   "done",
@@ -41,6 +45,39 @@ export function GenerationView() {
 
   const [text, setText] = useState("");
   const [userChoice, setUserChoice] = useState<string | undefined>(undefined);
+
+  // Staged references — uploaded refs queued for the next submit. Not the
+  // same as the full library (that's `useReferences()` in the gallery). When
+  // a generation submits we'll pass these refs' public_urls as image_urls
+  // (Sprint 4A.4). Removing a staged ref also deletes it from R2 + DB so the
+  // user's library doesn't accumulate one-off uploads.
+  const [stagedRefs, setStagedRefs] = useState<ReferenceResponse[]>([]);
+  const uploadReference = useUploadReference();
+  const deleteReference = useDeleteReference();
+
+  async function handlePickFiles(files: File[]) {
+    // Upload sequentially rather than in parallel — easier to reason about
+    // errors (one failure doesn't leave half the batch in limbo), and the
+    // user typically attaches one or two files at a time. Re-evaluate if
+    // batch uploads become common.
+    for (const file of files) {
+      try {
+        const ref = await uploadReference.mutateAsync(file);
+        setStagedRefs((prev) => [...prev, ref]);
+      } catch (err) {
+        // Surface the failure inline next time we add a toast layer; for
+        // now the error is logged so the user isn't left wondering.
+        console.error("Reference upload failed", err);
+      }
+    }
+  }
+
+  function handleRemoveStagedRef(id: string) {
+    setStagedRefs((prev) => prev.filter((r) => r.id !== id));
+    // Fire-and-forget delete — we don't block the UI on it. If it fails the
+    // ref stays in the library, harmless (next list call will show it).
+    deleteReference.mutate(id);
+  }
 
   if (modelsLoading) {
     return <CenteredMessage>Loading models…</CenteredMessage>;
@@ -64,14 +101,24 @@ export function GenerationView() {
         model_id: selectedModel.id,
         inputs: {
           text: selectedModel.input_types.includes("text") ? text : null,
-          image_urls: [],
+          // Sprint 4A.4 — pass staged refs' public URLs as multimodal input.
+          // The Seegen adapter will pick these up as its `urls` array and
+          // switch to image-to-image mode automatically. Other adapters
+          // (Pollinations, Gemini text) ignore image_urls — no special-casing.
+          image_urls: stagedRefs.map((r) => r.public_url),
         },
       },
       {
         // Clear the textarea once the submit is accepted by the backend,
         // matching every chat UI convention. The user can immediately start
         // typing the next prompt while the worker runs.
-        onSuccess: () => setText(""),
+        onSuccess: () => {
+          setText("");
+          // Clear staged refs from the bar — they're "used" now. The DB
+          // rows stay (they're in the user's library and we may add a
+          // gallery picker later); they just aren't pre-staged anymore.
+          setStagedRefs([]);
+        },
       },
     );
   }
@@ -87,6 +134,10 @@ export function GenerationView() {
       // Disabled while: the POST is in flight, OR the worker is still
       // crunching the previous generation.
       isPending={generate.isPending || isInflight}
+      references={stagedRefs}
+      onPickFiles={handlePickFiles}
+      onRemoveReference={handleRemoveStagedRef}
+      isUploading={uploadReference.isPending}
       className="w-full max-w-3xl"
     />
   );

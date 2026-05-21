@@ -1,6 +1,39 @@
 {
   "components": {
     "schemas": {
+      "CompleteRequest": {
+        "description": "Sent after the browser finishes the direct PUT.",
+        "properties": {
+          "content_type": {
+            "maxLength": 128,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "title": "Filename",
+            "type": "string"
+          },
+          "key": {
+            "maxLength": 512,
+            "title": "Key",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 1.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "size_bytes",
+          "key"
+        ],
+        "title": "CompleteRequest",
+        "type": "object"
+      },
       "CreateGenerationRequest": {
         "description": "Request body for POST /generations.",
         "properties": {
@@ -319,6 +352,78 @@
         "title": "OutputType",
         "type": "string"
       },
+      "PresignRequest": {
+        "description": "What the browser sends to /references/presign before uploading.",
+        "properties": {
+          "content_type": {
+            "maxLength": 128,
+            "title": "Content Type",
+            "type": "string"
+          },
+          "filename": {
+            "maxLength": 255,
+            "title": "Filename",
+            "type": "string"
+          },
+          "size_bytes": {
+            "minimum": 1.0,
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "content_type",
+          "size_bytes"
+        ],
+        "title": "PresignRequest",
+        "type": "object"
+      },
+      "PresignResponse": {
+        "description": "Everything the browser needs to perform the direct PUT to R2.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "title": "Expires In Seconds",
+            "type": "integer"
+          },
+          "key": {
+            "title": "Key",
+            "type": "string"
+          },
+          "public_url": {
+            "title": "Public Url",
+            "type": "string"
+          },
+          "reference_id": {
+            "format": "uuid",
+            "title": "Reference Id",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          },
+          "upload_url": {
+            "title": "Upload Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reference_id",
+          "upload_url",
+          "public_url",
+          "key",
+          "content_type",
+          "size_bytes",
+          "expires_in_seconds"
+        ],
+        "title": "PresignResponse",
+        "type": "object"
+      },
       "ProviderName": {
         "description": "The AI services we can route to.",
         "enum": [
@@ -331,6 +436,47 @@
         ],
         "title": "ProviderName",
         "type": "string"
+      },
+      "ReferenceResponse": {
+        "description": "Public-facing shape of a Reference row.",
+        "properties": {
+          "content_type": {
+            "title": "Content Type",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "public_url": {
+            "title": "Public Url",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "public_url",
+          "filename",
+          "content_type",
+          "size_bytes",
+          "created_at"
+        ],
+        "title": "ReferenceResponse",
+        "type": "object"
       },
       "ValidationError": {
         "properties": {
@@ -641,6 +787,220 @@
         "summary": "List Models",
         "tags": [
           "models"
+        ]
+      }
+    },
+    "/references": {
+      "get": {
+        "description": "List the caller's references, newest first.",
+        "operationId": "list_references_references_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ReferenceResponse"
+                  },
+                  "title": "Response List References References Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List References",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/presign": {
+      "post": {
+        "description": "Mint a signed PUT URL for the browser to upload directly to R2.",
+        "operationId": "presign_reference_upload_references_presign_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Presign Reference Upload",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}": {
+      "delete": {
+        "description": "Delete the reference's R2 object and DB row.\n\nOwner-scoped 404 (same pattern as /generations): we don't leak whether\na foreign reference exists.",
+        "operationId": "delete_reference_references__reference_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Reference",
+        "tags": [
+          "references"
+        ]
+      }
+    },
+    "/references/{reference_id}/complete": {
+      "post": {
+        "description": "Verify the R2 upload and create the Reference row.\n\nHEAD on R2 protects us from the client lying \u2014 without it a malicious\nuser could call /complete without uploading and end up with a DB row\npointing at nothing.\n\nAlso checks that the user_id in the R2 key matches the authenticated\nuser \u2014 defense-in-depth: the key was minted by /presign with this user's\nID, but if a key from another user's presign somehow leaks we still\nrefuse to associate the row with the wrong user.",
+        "operationId": "complete_reference_upload_references__reference_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "reference_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Reference Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReferenceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Complete Reference Upload",
+        "tags": [
+          "references"
         ]
       }
     }

@@ -77,15 +77,23 @@ class SeegenAdapter:
         # The suffix maps directly to Seegen's `model` field.
         model_name = model_id.removeprefix("seegen-") or "gpt-image-2"
 
+        adapter_inputs: dict[str, Any] = {
+            "prompt": inputs.text,
+            "quality": _DEFAULT_QUALITY,
+            "resolution": _DEFAULT_RESOLUTION,
+            "aspectRatio": _DEFAULT_ASPECT_RATIO,
+            "outputFormat": _DEFAULT_OUTPUT_FORMAT,
+        }
+        # Sprint 4A.4 — passing `urls` switches Seegen into image-to-image
+        # ("edit") mode. Per the docs they accept 1–10 image URLs. We cap
+        # to the same range here so we surface a clear error rather than
+        # punting it to the API.
+        if inputs.image_urls:
+            adapter_inputs["urls"] = inputs.image_urls[:10]
+
         body = {
             "model": model_name,
-            "inputs": {
-                "prompt": inputs.text,
-                "quality": _DEFAULT_QUALITY,
-                "resolution": _DEFAULT_RESOLUTION,
-                "aspectRatio": _DEFAULT_ASPECT_RATIO,
-                "outputFormat": _DEFAULT_OUTPUT_FORMAT,
-            },
+            "inputs": adapter_inputs,
         }
 
         task_id = self._submit(body)

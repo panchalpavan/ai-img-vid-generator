@@ -143,10 +143,116 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/references": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List References
+         * @description List the caller's references, newest first.
+         */
+        get: operations["list_references_references_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/references/presign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Presign Reference Upload
+         * @description Mint a signed PUT URL for the browser to upload directly to R2.
+         */
+        post: operations["presign_reference_upload_references_presign_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/references/{reference_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Reference
+         * @description Delete the reference's R2 object and DB row.
+         *
+         *     Owner-scoped 404 (same pattern as /generations): we don't leak whether
+         *     a foreign reference exists.
+         */
+        delete: operations["delete_reference_references__reference_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/references/{reference_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Complete Reference Upload
+         * @description Verify the R2 upload and create the Reference row.
+         *
+         *     HEAD on R2 protects us from the client lying — without it a malicious
+         *     user could call /complete without uploading and end up with a DB row
+         *     pointing at nothing.
+         *
+         *     Also checks that the user_id in the R2 key matches the authenticated
+         *     user — defense-in-depth: the key was minted by /presign with this user's
+         *     ID, but if a key from another user's presign somehow leaks we still
+         *     refuse to associate the row with the wrong user.
+         */
+        post: operations["complete_reference_upload_references__reference_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * CompleteRequest
+         * @description Sent after the browser finishes the direct PUT.
+         */
+        CompleteRequest: {
+            /** Content Type */
+            content_type: string;
+            /** Filename */
+            filename: string;
+            /** Key */
+            key: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
         /**
          * CreateGenerationRequest
          * @description Request body for POST /generations.
@@ -315,11 +421,70 @@ export interface components {
          */
         OutputType: "text" | "image" | "video";
         /**
+         * PresignRequest
+         * @description What the browser sends to /references/presign before uploading.
+         */
+        PresignRequest: {
+            /** Content Type */
+            content_type: string;
+            /** Filename */
+            filename: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
+        /**
+         * PresignResponse
+         * @description Everything the browser needs to perform the direct PUT to R2.
+         */
+        PresignResponse: {
+            /** Content Type */
+            content_type: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+            /** Key */
+            key: string;
+            /** Public Url */
+            public_url: string;
+            /**
+             * Reference Id
+             * Format: uuid
+             */
+            reference_id: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Upload Url */
+            upload_url: string;
+        };
+        /**
          * ProviderName
          * @description The AI services we can route to.
          * @enum {string}
          */
         ProviderName: "google-ai-studio" | "vertex-ai" | "sjinn" | "pollinations" | "cloudflare-workers-ai" | "seegen";
+        /**
+         * ReferenceResponse
+         * @description Public-facing shape of a Reference row.
+         */
+        ReferenceResponse: {
+            /** Content Type */
+            content_type: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Filename */
+            filename: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Public Url */
+            public_url: string;
+            /** Size Bytes */
+            size_bytes: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -514,6 +679,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ModelConfig"][];
+                };
+            };
+        };
+    };
+    list_references_references_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceResponse"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    presign_reference_upload_references_presign_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_reference_references__reference_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_reference_upload_references__reference_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                reference_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferenceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
