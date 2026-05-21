@@ -77,6 +77,21 @@ Pydantic Settings reads `.env` once at process construction (via `@lru_cache`). 
 
 Some accounts see `Quota exceeded ... limit: 0, model: gemini-2.0-flash` (or `gemini-2.5-flash-image`) — meaning the free tier doesn't include that model on that account. We work around this by registering multiple providers in a cascade (Pollinations FLUX is currently the working free image provider).
 
+## Cloudflare R2 `r2.dev` URLs 403 Python's default User-Agent
+
+The bucket's **Public Access** can be enabled and the URL valid, but
+`urllib.urlopen(...)` (and any client sending `Python-urllib/3.x`) gets
+**HTTP 403 Forbidden**. Same Cloudflare bot-detection layer that bites
+Pollinations. The browser's real UA works fine, so `<img src="...">` in
+the frontend is unaffected — this only matters for **server-side fetches**
+(e.g. downloading a Pollinations result and re-uploading to R2). Solve it
+the same way as Pollinations: set `User-Agent: Mozilla/5.0` (or any
+non-`Python-urllib` value) on the request.
+
+The 200/403 split is silent — there's no clear error message pointing at
+the UA. Symptom is "I just uploaded the object, listing it in the bucket
+confirms it's there, but fetching the public URL 403s."
+
 ## Pollinations.ai needs proper headers or returns 403
 
 Pollinations sits behind Cloudflare, which 403s requests with the default `Python-urllib/3.12` User-Agent (bot detection). The `PollinationsAdapter` sets a real-looking UA + `Referer` header + `referrer` query param. Don't strip these.

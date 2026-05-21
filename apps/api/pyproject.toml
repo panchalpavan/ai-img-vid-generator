@@ -5,6 +5,7 @@ description = "FastAPI backend for img-vid-generation"
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.18.4",
+    "boto3>=1.43.12",
     "celery>=5.6.3",
     "fastapi>=0.136.1",
     "google-generativeai>=0.8.6",
@@ -88,6 +89,13 @@ disallow_untyped_decorators = false
 # Celery as a whole ships no inline types (no py.typed marker, no stubs
 # package). Telling mypy to skip its imports is the documented workaround.
 module = "celery.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# boto3 / botocore ship no inline types either. The optional stubs package
+# (mypy_boto3_s3 + boto3-stubs) is heavy and our R2 usage is tiny — easier
+# to treat the client surface as Any in app/core/storage.py.
+module = ["boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

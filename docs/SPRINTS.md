@@ -36,7 +36,7 @@ Auth flow: Next.js handles Google OAuth via Auth.js, issues a JWT, includes it a
 | D5 | Free credits for new users | No by default; configurable via `FREE_STARTER_CREDITS` env var | 2026-04-28 |
 | D6 | Stripe | Real implementation from Sprint 5 — no fake credits | 2026-04-28 |
 | D7 | Auth provider (frontend) | Auth.js with Google OAuth, **JWT session strategy** | 2026-04-28 |
-| D8 | Reference Library scope | PENDING — image-only vs document RAG (pgvector). Decided after Sprint 3. | - |
+| D8 | Reference Library scope | **Path B (image + document RAG with pgvector)**, phased as Sprint 4A (R2 + image refs) then Sprint 4B (pgvector RAG). Prioritises learning depth over shipping speed. | 2026-05-21 |
 | D9 | Storage & AI providers (dev) | R2 + Google AI Studio during dev (zero cost). GCS + Vertex AI later. | 2026-04-28 |
 | D10 | ORM | ~~Drizzle~~ → **SQLModel + Alembic** (Python owns the DB now) | 2026-05-16 |
 | D11 | Database (dev) | Supabase free Postgres via raw connection string | 2026-04-28 |
@@ -242,14 +242,30 @@ Tiny mini-sprint added because the app's whole purpose is image+video and Sprint
 
 ---
 
-## Sprint 4 — Reference Library
+## Sprint 4 — Reference Library (D8 = Path B, phased)
 
-(Tasks depend on D8 decision — see ADR-0005 region for image-only path; pgvector path will get its own ADR.)
+D8 decided 2026-05-21: image refs **and** document RAG. Phased so each phase ships something usable rather than landing as one 2-sprint blob.
 
-- 4.1: Reference upload UI → FastAPI → R2
-- 4.2: Pass reference URL as multimodal input to the model
-- 4.3: *(Path B only)* pgvector extension, embedding pipeline, retrieval step
-- 4.4: `references` table, CRUD endpoints, gallery management
+### Sprint 4A — R2 + image references
+
+**Ship checkpoint:** "upload cat photo + prompt 'add a hat' → edited image via Seegen image-to-image."
+
+- 4A.1: R2 client + bucket wiring in FastAPI (`app/core/storage.py`, boto3 against R2's S3-compatible endpoint). Settings: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`.
+- 4A.2: Migrate Sprint 3.5 image outputs from base64 data URIs to R2 URLs. Celery task uploads adapter output bytes (Pollinations) or downloads-and-re-uploads URLs (Seegen) so results live in our bucket. Shrink `generations.result_url` back to VARCHAR(1024).
+- 4A.3: Image upload UI + endpoint. `POST /references` accepts multipart, validates type/size, uploads to R2, returns the public URL. Drag-and-drop component in the prompt bar (the `+` button placeholder already exists).
+- 4A.4: Pass references into Seegen's image-to-image mode (the `urls` array field — already documented in the adapter). `GenerationInput.image_urls` is already plumbed end-to-end, just needs the frontend to populate it.
+
+### Sprint 4B — Document RAG (pgvector)
+
+**Ship checkpoint:** "upload brand-guide.pdf, ask 'generate an image in this style' → image grounded in retrieved chunks."
+
+- 4B.1: Enable pgvector extension on Supabase via Alembic migration. New `references` table grows `vector` column + metadata.
+- 4B.2: Document upload pipeline: PDF/TXT → text extraction → chunking (likely fixed-token or recursive-character splitter) → embeddings via Gemini's `text-embedding-004` (free tier). Stored as `vector(768)`.
+- 4B.3: Retrieval step in the generation flow: cosine-similarity search top-k chunks → injected into the model prompt as context.
+- 4B.4: References gallery UI — list, preview, delete uploaded refs.
+- 4B.5: New ADR documenting the pgvector + retrieval design.
+
+ADR-0005 (provider adapter pattern) already supports the multimodal-input pieces; pgvector gets its own ADR in 4B.5.
 
 ---
 

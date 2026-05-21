@@ -60,6 +60,21 @@ class Settings(BaseSettings):
     # Get one at https://seegen.ai (free tier: 200 credits at signup).
     seegen_api_key: str | None = None
 
+    # Cloudflare R2 object storage (Sprint 4A). S3-compatible — boto3 against
+    # the R2 endpoint works the same as against S3. Zero egress fees + 10 GB
+    # free tier; the only difference from S3 is the regional endpoint URL.
+    # All five must be set together; missing-key handling lives in the storage
+    # module so the app can boot without R2 configured (during local dev work
+    # that doesn't touch storage).
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_endpoint: str | None = None  # https://<ACCOUNT_ID>.r2.cloudflarestorage.com
+    r2_bucket: str | None = None
+    # Public read URL for browser <img src="..."> — the bucket-specific
+    # r2.dev subdomain we enable in the dashboard. Without this, uploaded
+    # objects exist but can't be displayed directly in the browser.
+    r2_public_url: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
