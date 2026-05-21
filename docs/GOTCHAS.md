@@ -100,9 +100,26 @@ Pollinations sits behind Cloudflare, which 403s requests with the default `Pytho
 
 We're on the deprecated `google.generativeai`. The new SDK is `google.genai` (note: no "generative" in the package name). Current code still works; migration is parked.
 
-## Image data URIs need a wide `result_url` column
+## ~~Image data URIs need a wide `result_url` column~~ (RESOLVED in Sprint 4A.2)
 
-Sprint 3.5 stores base64-encoded image data in `generations.result_url`. The column is VARCHAR(10MB) to fit images up to ~7MB raw. When R2 lands in Sprint 4, this becomes a short URL and we can shrink the column.
+Historical: Sprint 3.5 stored base64-encoded image data inline in `generations.result_url`, requiring VARCHAR(10MB). Sprint 4A.2 moved all image outputs to Cloudflare R2 and shrunk the column back to VARCHAR(1024). Alembic `2724c5210cfe` did the column ALTER after NULL-ing legacy data:URI rows so the migration didn't fail on width. If a new provider ever returns data URIs again, the task layer will decode + upload to R2 before INSERT (see `_persist_image_to_r2` in `apps/api/app/tasks/generation.py`) — the column stays narrow.
+
+## R2 CORS configuration requires an admin-scope API token
+
+Setting CORS via `boto3.client("s3").put_bucket_cors(...)` against R2 fails with **AccessDenied** if the token only has Object Read & Write. CORS lives at the bucket level, which requires bucket-admin permissions. Two options when you need to set it:
+
+- Apply via the Cloudflare dashboard (Bucket → Settings → CORS Policy), no admin token needed.
+- Mint a short-lived admin token, run `scripts/setup_r2_cors.py`, then either delete the admin token or downscope it back to Object R/W. The runtime app NEVER needs admin scope — only bucket-config changes do.
+
+Symptoms: 403 from `put_bucket_cors`, but every other operation (`put_object`, `get_object`, `list_objects_v2`) works fine.
+
+## Presigned R2 PUT URLs bind Content-Type and Content-Length
+
+When the backend calls `generate_presigned_url("put_object", Params={..., "ContentType": "image/png", "ContentLength": 12345})`, the resulting signed URL **only accepts a request that sends those exact header values**. Any mismatch yields `SignatureDoesNotMatch` from R2, and the browser shows an opaque CORS error in the console (because the failed request never gets a CORS header on the response).
+
+Symptoms: upload fails with `403 SignatureDoesNotMatch` (visible in the network tab), or a misleading "CORS error" in the browser console because the error response itself doesn't include CORS headers.
+
+Fix: the client `fetch()` for the PUT MUST set `Content-Type` to the same value the backend signed for. The Browser auto-adds `Content-Length` from the Blob body, which matches the size we declared in `/references/presign`. If we ever add custom headers (e.g. `x-amz-meta-*`), they need to be included in `Params` at signing time AND sent at upload time.
 
 ## `npm run lint` — no `--max-warnings`
 

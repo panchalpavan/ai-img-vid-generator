@@ -1,7 +1,7 @@
 # Sprint Plan — img-vid-generation
 
-> Last updated: 2026-05-18
-> Current sprint: Sprints 0.5 → 3.5 **all complete end-to-end**. Sprint 4 (Reference Library) is next.
+> Last updated: 2026-05-22
+> Current sprint: Sprints 0.5 → 4A **all complete end-to-end**. Sprint 4B (pgvector RAG) is next.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
 >
 > **Completed sprints (with verification):**
@@ -15,6 +15,10 @@
 > - Sprint 2 — Adapter pattern: `app/providers/{types,base,google_ai_studio}.py`, `gemini-2.5-flash` registered. `GET /models`, `POST /generations` (initial sync version), dynamic Zod form. Replaced with prompt-bar in 2.x polish (Shadcn pill, model dropdown, auto-resize textarea, system-font, "cursor-pointer" applied globally to Shadcn Button + DropdownMenuItem).
 > - Sprint 3 — Async pipeline. `generations` table (status pending/processing/done/failed, prompt, result_text, result_url, cost_in_credits, error, timestamps). Celery task `run_generation` with credit deduction + refund-on-failure (uses generation_id as CreditTransaction reference_id — closes the Sprint 2 TODO). `POST /generations` enqueues + returns pending row; `GET /generations/{id}` for polling (owner-scoped 404); `GET /generations` list endpoint. Frontend `useGenerate` (mutation) + `useGeneration(id)` polling at 1Hz. `GenerationView` shows pending/processing/done/failed with bar pinned bottom; "← New generation" reset button.
 > - Sprint 3.5 (ad-hoc, in-between) — Image generation cascade: `gemini-2.5-flash-image` registered (Nano Banana — currently quota-blocked on user's free tier with `limit: 0`) + `pollinations-flux` registered (PollinationsAdapter, stdlib urllib, **requires User-Agent + Referer headers to bypass Cloudflare bot detection**). Adapter routes text vs image responses by model_id substring "image". `result_url` widened to VARCHAR(10MB) to hold base64 data URIs. Frontend renders inline `<img>` for data:image URIs. ErrorCard now has friendly parser + collapsible "Show technical details".
+> - Sprint 3.5.1 (2026-05-21) — Seegen.ai provider integration. Registered `seegen-gpt-image-2` (job-based: POST createTask → poll queryTask, adapter blocks internally to keep ProviderAdapter Protocol synchronous). Added `ModelConfig.enabled: bool = True` soft-disable switch — `gemini-2.5-flash-image` set to enabled=False (quota=0 on user's account). Default to 1k/medium resolution (~13 images per 200-credit free tier).
+> - Sprint 4A.1 (2026-05-21) — R2 storage wired. `app/core/storage.py` (boto3 against R2's S3-compatible endpoint). Settings: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`. Smoke test confirms upload + public-fetch + delete roundtrip. **Gotcha logged**: r2.dev public URLs 403 Python's default User-Agent (Cloudflare bot detection — same as Pollinations); browsers fine.
+> - Sprint 4A.2 (2026-05-21) — Generation outputs migrated from base64 data URIs to R2. Celery task now decodes data:URIs OR server-side-fetches https URLs (with browser UA) and uploads to `generations/<id>.<ext>`. Alembic `2724c5210cfe` shrinks `result_url` back to VARCHAR(1024) (after NULL-ing legacy data:URI rows). Refund-on-storage-failure flagged as open business-logic question for Sprint 5 revisit.
+> - Sprint 4A.3 + 4A.4 (2026-05-22) — Reference Library (image refs). Direct-upload via **presigned URLs** (browser → R2, not proxied through FastAPI). Three-step flow: `POST /references/presign` → browser `PUT` to R2 → `POST /references/{id}/complete` (backend HEADs R2 to verify before INSERT). CORS configured on bucket via `scripts/setup_r2_cors.py`. New `references` SQLModel + Alembic `352086a915a3`. Frontend: `useUploadReference` orchestrator hook, file picker in PromptBar with thumbnail strip + remove buttons, refs flow into `GenerationInput.image_urls`. Seegen adapter passes through `urls` array for image-to-image mode.
 
 ## Architecture summary
 
@@ -246,26 +250,39 @@ Tiny mini-sprint added because the app's whole purpose is image+video and Sprint
 
 D8 decided 2026-05-21: image refs **and** document RAG. Phased so each phase ships something usable rather than landing as one 2-sprint blob.
 
-### Sprint 4A — R2 + image references
+### Sprint 4A — R2 + image references (DONE — 2026-05-22)
 
-**Ship checkpoint:** "upload cat photo + prompt 'add a hat' → edited image via Seegen image-to-image."
+**Ship checkpoint reached:** "upload cat photo + prompt 'edit this' → edited image via Seegen image-to-image."
 
-- 4A.1: R2 client + bucket wiring in FastAPI (`app/core/storage.py`, boto3 against R2's S3-compatible endpoint). Settings: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`.
-- 4A.2: Migrate Sprint 3.5 image outputs from base64 data URIs to R2 URLs. Celery task uploads adapter output bytes (Pollinations) or downloads-and-re-uploads URLs (Seegen) so results live in our bucket. Shrink `generations.result_url` back to VARCHAR(1024).
-- 4A.3: Image upload UI + endpoint. `POST /references` accepts multipart, validates type/size, uploads to R2, returns the public URL. Drag-and-drop component in the prompt bar (the `+` button placeholder already exists).
-- 4A.4: Pass references into Seegen's image-to-image mode (the `urls` array field — already documented in the adapter). `GenerationInput.image_urls` is already plumbed end-to-end, just needs the frontend to populate it.
+- ✅ **4A.1** — R2 client wired (`app/core/storage.py`, boto3 against S3-compatible endpoint). Five env vars (`R2_ACCESS_KEY_ID/SECRET/ENDPOINT/BUCKET/PUBLIC_URL`). Smoke test confirms upload + public-fetch + delete. Gotcha: r2.dev URLs 403 Python's default UA — browser-side fine, server-side fetches must spoof a real UA.
+- ✅ **4A.2** — Generation outputs migrated from data URIs to R2. Celery task decodes data URIs (Pollinations) or fetches https URLs (Seegen) with browser UA, uploads to `generations/<id>.<ext>`. Alembic `2724c5210cfe` shrinks `result_url` to VARCHAR(1024) after NULL-ing legacy data: rows.
+- ✅ **4A.3** — Reference upload via **presigned PUT URLs** (direct browser → R2, not proxied through FastAPI). Three-step flow: `POST /references/presign` → browser `PUT` to R2 with bound Content-Type → `POST /references/{id}/complete` (backend HEADs R2 to verify size before INSERT). Bucket CORS configured via `scripts/setup_r2_cors.py`. `references` SQLModel + Alembic `352086a915a3`. Frontend: `useUploadReference` orchestrator, file picker + thumbnail strip in PromptBar, sequential upload of multi-file picks.
+- ✅ **4A.4** — Refs flow into `GenerationInput.image_urls` from the frontend; Seegen adapter passes them through as the `urls` array (image-to-image mode). Other adapters (Pollinations, Gemini text) ignore `image_urls` — no special-casing.
 
-### Sprint 4B — Document RAG (pgvector)
+### Sprint 4B — Document RAG (pgvector) — NEXT
 
-**Ship checkpoint:** "upload brand-guide.pdf, ask 'generate an image in this style' → image grounded in retrieved chunks."
+**Ship checkpoint:** "upload brand-guide.pdf, ask 'generate a logo in this style' → image grounded in retrieved style guidelines."
 
-- 4B.1: Enable pgvector extension on Supabase via Alembic migration. New `references` table grows `vector` column + metadata.
-- 4B.2: Document upload pipeline: PDF/TXT → text extraction → chunking (likely fixed-token or recursive-character splitter) → embeddings via Gemini's `text-embedding-004` (free tier). Stored as `vector(768)`.
-- 4B.3: Retrieval step in the generation flow: cosine-similarity search top-k chunks → injected into the model prompt as context.
-- 4B.4: References gallery UI — list, preview, delete uploaded refs.
-- 4B.5: New ADR documenting the pgvector + retrieval design.
+Architectural decisions (locked in 2026-05-22):
 
-ADR-0005 (provider adapter pattern) already supports the multimodal-input pieces; pgvector gets its own ADR in 4B.5.
+| ID | Decision | Choice |
+|----|----------|--------|
+| B-1 | Image vs document refs in schema | **Single `references` table**, add `kind: image\|document` + `extracted_text TEXT NULL`. Shared upload/storage/delete flow; the kind column gates post-processing. |
+| B-2 | Chunk storage | **Separate `reference_chunks` table** — `(id, reference_id FK, chunk_index, text, embedding vector(768), token_count)`. One doc → many chunks; embeddings live on chunks. |
+| B-3 | Embedding model | **Gemini `text-embedding-004`** — 768 dims, free tier already in `GOOGLE_API_KEY`, batchable. Avoid OpenAI paid tier for now. |
+| B-4 | Chunking strategy | **Fixed-size with overlap** — ~1000 chars / ~200 char overlap, paragraph→sentence→word break preference. Simple; revisit if quality suffers. |
+| B-5 | Retrieval injection point | **Augment the text prompt** in the Celery task before adapter call: prepend `Style guidelines from your references:\n- chunk1\n- chunk2…\n\nUser request: {prompt}`. Adapters still see prompt+image_urls, unaware of RAG. |
+
+Tasks:
+
+- **4B.1** — Alembic: enable pgvector extension, add `kind`/`extracted_text` to `references`, create `reference_chunks` table with `vector(768)` + ivfflat (or hnsw) index for fast similarity search.
+- **4B.2** — File type expansion: backend allowlist gains `text/plain` and `application/pdf`. PDF text extraction via `pypdf` (lightweight, no OCR — OCR can come later if needed).
+- **4B.3** — Chunking + embedding pipeline. Runs as a new Celery task `embed_reference(reference_id)` kicked off after `/references/{id}/complete` returns. Upload latency stays low; embedding becomes a background concern.
+- **4B.4** — Retrieval step. Before adapter call: embed the user's prompt, find top-k chunks (default k=5) for that user's documents via `embedding <-> query_embedding` similarity, prepend as context. Configurable via `RAG_TOP_K` env.
+- **4B.5** — References gallery page. Card per reference: image thumbnail (for `kind=image`) or doc icon + first chunk preview (for `kind=document`). Delete from gallery.
+- **4B.6** — New ADR: pgvector + retrieval design (chunking choices, distance metric, index type, why we run embedding in the Celery worker not the request thread).
+
+ADR-0005 (provider adapter pattern) stays untouched — RAG augmentation happens above the adapter layer, so adapters remain ignorant of the difference between a hand-typed prompt and a RAG-augmented one.
 
 ---
 
