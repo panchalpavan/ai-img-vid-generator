@@ -17,7 +17,7 @@ handles both gemini-2.0-flash and gemini-1.5-pro).
 
 from enum import StrEnum
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ProviderName(StrEnum):
@@ -88,12 +88,47 @@ class GenerationInput(BaseModel):
 
 
 class GenerationOutput(BaseModel):
-    """Result of a synchronous generation call.
+    """Result of a generation — what the provider produced.
 
-    Sprint 3 will add an async variant (`JobHandle`) for providers like
-    Sjinn that return a task ID instead of a finished result.
+    Returned by both synchronous adapters (`SyncProviderAdapter.generate`)
+    and async adapters when polling reports the job is done
+    (`JobStatus.output`).
     """
 
     output_type: OutputType
     text: str | None = None  # set when output_type == TEXT
     url: str | None = None   # set when output_type == IMAGE | VIDEO (R2 URL)
+
+
+class JobState(StrEnum):
+    """Lifecycle of an async provider job, mirrored on the row but kept as
+    a separate type from GenerationStatus so the provider-status and our
+    DB row-status don't accidentally drift.
+
+    These are what a *provider* can tell us about a job. Our Generation row
+    has its own status (which also includes 'pending' = row created but
+    task not yet picked up — a concept the provider doesn't know about).
+    """
+
+    PROCESSING = "processing"  # submitted, still running upstream
+    DONE = "done"              # output is ready
+    FAILED = "failed"          # upstream reported failure
+
+
+class JobStatus(BaseModel):
+    """One snapshot of an async job's state, as the adapter sees it.
+
+    `output` is populated when `state == DONE`. `error` is populated when
+    `state == FAILED`. Both are None during processing.
+
+    The Celery poll task re-enqueues itself until `state` is terminal,
+    then routes to the same persistence path used by sync generations.
+    """
+
+    # Pydantic v2 is happy with strict literal defaults; this config just
+    # silences "json_schema_extra" warnings for the StrEnum field.
+    model_config = ConfigDict(use_enum_values=True)
+
+    state: JobState
+    output: GenerationOutput | None = None
+    error: str | None = None

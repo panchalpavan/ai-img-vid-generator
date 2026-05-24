@@ -1,7 +1,7 @@
 # Sprint Plan — img-vid-generation
 
 > Last updated: 2026-05-24
-> Current sprint: Sprints 0.5 → 5 **all complete end-to-end**. Sprint 4B (pgvector RAG) parked. Sprint 6 (Sjinn) is next.
+> Current sprint: Sprints 0.5 → 6.6 **all complete end-to-end**. Sprint 4B (pgvector RAG) parked. Sprint 7 (Deployment) is next — pending D18 decision.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
 >
 > **Completed sprints (with verification):**
@@ -21,6 +21,9 @@
 > - Sprint 4A.3 + 4A.4 (2026-05-22) — Reference Library (image refs). Direct-upload via **presigned URLs** (browser → R2, not proxied through FastAPI). Three-step flow: `POST /references/presign` → browser `PUT` to R2 → `POST /references/{id}/complete` (backend HEADs R2 to verify before INSERT). CORS configured on bucket via `scripts/setup_r2_cors.py`. New `references` SQLModel + Alembic `352086a915a3`. Frontend: `useUploadReference` orchestrator hook, file picker in PromptBar with thumbnail strip + remove buttons, refs flow into `GenerationInput.image_urls`. Seegen adapter passes through `urls` array for image-to-image mode.
 > - Sprint 4B (parked 2026-05-22) — pgvector RAG scaffold built then rolled back. No real use case for documents in an image-gen app. The five locked design decisions (single-table discriminator, separate chunks table, Gemini text-embedding-004, fixed-size chunking, retrieval injection in Celery task) preserved in this file's Sprint 4B section for future revisit when a real RAG use case appears.
 > - Sprint 5 (2026-05-24) — Stripe credit packs. Backend: `app/billing/packs.py` catalog (3 packs: Starter $5/100c, Pro $20/500c, Studio $60/2000c), `/billing/packs` + `/billing/checkout` + `/webhooks/stripe` router. **Idempotency** via `UNIQUE (type, reference_id)` on credit_transactions (Alembic `a1e63fecb42b`) — Stripe webhook retries land as IntegrityError → 200 ack. Stripe-hosted Checkout (full redirect, hosted UI), webhook signature verification via `stripe.Webhook.construct_event` on raw bytes. Frontend: `BuyCreditsModal` (inline Tailwind overlay), `useBillingPacks` + `useStartCheckout` hooks, navbar credit pill is now clickable, `?checkout=success/cancel` return URL handler invalidates `["me"]` and strips params. Smoke-tested end-to-end with `stripe listen` and test card. New gotchas: `stripe.Event` doesn't support `.get()` (use bracket access), `whsec_` regenerates each `stripe listen` session.
+> - Sprint 6 (2026-05-24) — Async provider Protocol. **Pivoted from "Sjinn integration"** (Sjinn has no free tier + no access today). Split `ProviderAdapter` into `SyncProviderAdapter` and `AsyncProviderAdapter` Protocols. Added `JobState` enum + `JobStatus` Pydantic model. Alembic `6dbabf5d486a` adds `generations.provider_job_id`. Refactored `SeegenAdapter` into `submit_async` (POST createTask) + `poll_status` (GET queryTask) — no more blocking `time.sleep` loop. Celery `run_generation` now dispatches on `ModelConfig.is_async`; new `poll_generation` task re-enqueues itself with `apply_async(countdown=3)` until terminal, with a 5-minute timeout. Worker slots stop blocking on long generations (single worker can interleave 10+ in-flight async jobs). Fixed Sprint 5 Alembic drift: added `__table_args__` UniqueConstraint to CreditTransaction model.
+> - Sprint 6.5 (2026-05-24) — Cloudflare Workers AI provider. `CloudflareWorkersAIAdapter` (sync, FLUX-1-schnell). Same CF account as R2; new token scoped to "Workers AI: Read". Registers conditional on env vars — missing config means the model just doesn't show up in /models. Real free tier (~25-100 imgs/day), 2-second generations, fits between Seegen ($) and Pollinations (flaky) in the cascade. **Gotcha caught**: CF FLUX-schnell returns JPEG bytes despite docs saying PNG — adapter now sniffs magic bytes (`\xff\xd8\xff` = JPEG) before building the data URI.
+> - Sprint 6.6 (2026-05-24) — "My Generations" gallery. New `/history` route (auth-gated server component). `useGenerationsList` paginated query hook (12 per page). `GenerationsGallery` client component: grid of image thumbnails / text snippet cards, prompt overlay on hover, click → detail modal showing prompt + full result + status/model/timestamp. Older/Newer pagination buttons, empty state, error state. Navbar gains a "History" link next to the credit pill.
 
 ## Architecture summary
 
@@ -302,13 +305,37 @@ Sprint 5 (Stripe + monetization) is now next.
 
 ---
 
-## Sprint 6 — Sjinn Integration
+## Sprint 6 — Async Provider Protocol (DONE 2026-05-24)
 
-**Goal:** Premium video via the same form. Validates the registry pattern.
+**Pivoted from "Sjinn Integration"** — Sjinn has no free tier and we don't have access (D2). But the *learning goal* (proper async Protocol, non-blocking workers) doesn't depend on Sjinn. We refactored Seegen (already job-based) as the vehicle. When Sjinn access lands later, it's a single new adapter file conforming to the now-extended Protocol — zero rework.
 
-- 6.1: Sjinn provider added to `app/providers/`
-- 6.2: Celery task with polling loop (Sjinn is task-based — submit, poll for status)
-- 6.3: `cost_in_credits` differentiation per model (no special-casing)
+**Outcome:** Celery workers no longer block on long polls. A single worker can interleave 10+ in-flight async jobs by polling each every 3 seconds. Externally indistinguishable from the old flow — same UI behaviour, same result quality.
+
+- ✅ **6.1** — `app/providers/base.py` split into two `@runtime_checkable` Protocols: `SyncProviderAdapter` (`generate()`) and `AsyncProviderAdapter` (`submit_async()` + `poll_status()`). `ProviderAdapter` is now a union. New `JobState` enum (`PROCESSING|DONE|FAILED`) + `JobStatus` Pydantic model in `app/providers/types.py`.
+- ✅ **6.2** — Alembic `6dbabf5d486a` adds `generations.provider_job_id` (VARCHAR 255, nullable, indexed). Carries provider's task id across worker restarts so the poll task can resume without losing track. Also added `__table_args__` UniqueConstraint declaration to CreditTransaction (matches Sprint 5's DB constraint; fixes autogen drift).
+- ✅ **6.3** — `SeegenAdapter` rewritten: `submit_async` (POST createTask) + `poll_status` (GET queryTask). No more blocking `time.sleep` loop. Registry flips `is_async=True` for Seegen.
+- ✅ **6.4** — `app/tasks/generation.py` refactored. `run_generation` becomes the dispatcher — for sync providers, runs the existing flow; for async, calls `submit_async` then `poll_generation.apply_async(countdown=3)`. New `poll_generation` task: idempotent, calls `poll_status`, then either re-enqueues itself, finalises the row, or fails with refund. Hard timeout via `created_at + 300s`. Transient query errors re-enqueue (bounded by timeout). `_finalize_done` extracted as shared helper between sync and async paths.
+- ⏸ **6.5 (parked sub-task: ADR)** — Formal ADR for the async Protocol design + self-re-enqueue pattern. Not yet written; design captured in this file + `memory/project_decisions.md` for now. Naming aside: this is *inside* Sprint 6, distinct from the top-level "Sprint 6.5 — CF Workers AI" below.
+
+### Sprint 6.5 — Cloudflare Workers AI provider (DONE 2026-05-24)
+
+**Outcome:** Third image provider live, free tier from existing CF account, slots between Seegen and Pollinations in the cascade. 2-second generations on FLUX-1-schnell.
+
+- ✅ `app/providers/cloudflare_workers_ai.py` — sync adapter for `@cf/black-forest-labs/flux-1-schnell`. Bearer token via `CLOUDFLARE_WORKERS_AI_TOKEN`, account via `CLOUDFLARE_ACCOUNT_ID` (same account as R2; tokens are scoped per-product). Map-based model translation (`cloudflare-flux-schnell` → `@cf/...`) to document the slug shape in one place.
+- ✅ Registry registers conditional on env vars present — missing config means the model just doesn't appear in `/models` (no broken state).
+- ✅ Defaults FLUX-schnell to `steps=4` (model is optimised for low step counts).
+- ✅ **Caught CF MIME bug**: FLUX-schnell returns JPEG bytes despite docs saying PNG. Adapter now sniffs magic bytes (`\xff\xd8\xff`, `\x89PNG`, RIFF+WEBP, GIF) and builds the data URI with the actual MIME type. Downstream R2 persist step gets `.jpg` ext + `image/jpeg` content-type correctly.
+
+### Sprint 6.6 — "My Generations" Gallery (DONE 2026-05-24)
+
+**Outcome:** Visual history page. Past generations are now browsable + previewable from the navbar.
+
+- ✅ New `/history` route, server-component auth-gated (redirects to `/` for signed-out users).
+- ✅ `lib/api/use-generations.ts` — `useGenerationsList(offset, limit)` paginated query (12 per page). Uses `placeholderData` to keep the previous page visible while the next loads.
+- ✅ `components/generations-gallery.tsx` — responsive grid (2/3/4 cols by breakpoint), card per generation. Image generations show thumbnail with prompt-overlay-on-hover; text generations show snippet. Status badge for FAILED/PROCESSING/PENDING rows. Older/Newer page buttons with disabled states.
+- ✅ Detail modal: click any card → full prompt + full image / text / error display + metadata (model id, timestamp, status). Escape closes; click-backdrop closes.
+- ✅ Navbar gains a "History" text link to the left of the credit pill.
+- ⏸ Delete-from-gallery deferred — not strictly needed, and `DELETE /generations/{id}` doesn't exist yet (would need to cleanup R2 object). Easy future polish.
 
 ---
 

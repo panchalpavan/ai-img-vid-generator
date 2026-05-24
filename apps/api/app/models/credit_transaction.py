@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from uuid import UUID, uuid4
 
-from sqlalchemy import Column, String
+from sqlalchemy import Column, String, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -42,6 +42,16 @@ class TransactionType(StrEnum):
 
 class CreditTransaction(SQLModel, table=True):
     __tablename__ = "credit_transactions"
+    # Sprint 5 idempotency: a given (type, reference_id) pair can appear
+    # at most once. Postgres treats NULLs as distinct, so multiple rows
+    # with reference_id IS NULL (STARTER_BONUS, ADMIN_GRANT) are allowed.
+    # Stripe webhook retries land here as IntegrityError → caught and
+    # converted to a 200 ack in the billing router.
+    __table_args__ = (
+        UniqueConstraint(
+            "type", "reference_id", name="uq_credit_transactions_type_reference_id"
+        ),
+    )
 
     id: UUID = Field(default_factory=uuid4, primary_key=True)
     user_id: UUID = Field(foreign_key="users.id", index=True)

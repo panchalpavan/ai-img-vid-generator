@@ -4,12 +4,11 @@ Seegen's API is **asynchronous**: POST `/jobs/createTask` returns a `taskId`
 immediately, and the caller polls `/jobs/queryTask?taskId=...` until the
 job reaches `COMPLETED` or `FAILED`.
 
-For Sprint 3.5 we keep the ProviderAdapter Protocol synchronous: the Celery
-worker already runs `generate()` off the request thread, so an adapter that
-blocks while polling Seegen looks fine to the rest of the app. When Sprint 6
-introduces Sjinn (also job-based) we'll extend the Protocol with explicit
-`submit_async` + `poll_status` methods and a Celery task that re-enqueues
-itself between polls, so a worker doesn't sit blocked for minutes.
+This adapter implements the `AsyncProviderAdapter` Protocol (Sprint 6.3
+refactor): submission and status-checking are exposed as separate
+non-blocking methods, and the Celery layer drives polling via a
+self-re-enqueueing task — so a single worker isn't tied up for 15-60s
+per generation.
 
 API surface (https://seegen.ai/api-docs):
   POST /api/v1/jobs/createTask    → {"taskId": "..."}
@@ -17,30 +16,34 @@ API surface (https://seegen.ai/api-docs):
                                   → {"status": "PENDING|PROCESSING|COMPLETED|FAILED",
                                      "output": [{"url": "..."}], "error": ...}
 
-Pricing is metered in Seegen's *own* credit system (not ours): 2k/medium is
-35 of their credits. Failed tasks refund automatically on their side. Our
-`cost_in_credits` field is independent — it represents what *we* charge our
-user in *our* ledger.
+Pricing is metered in Seegen's *own* credit system (not ours): 1k/medium
+is 15 of their credits per image. Failed tasks refund automatically on
+their side. Our `cost_in_credits` field is independent — it represents
+what *we* charge our user in *our* ledger.
 """
 
 import json
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Mapping
 from typing import Any
 
-from app.providers.types import GenerationInput, GenerationOutput, OutputType
+from app.providers.types import (
+    GenerationInput,
+    GenerationOutput,
+    JobState,
+    JobStatus,
+    OutputType,
+)
 
 _BASE_URL = "https://seegen.ai/api/v1"
 _CREATE_PATH = "/jobs/createTask"
 _QUERY_PATH = "/jobs/queryTask"
 
-# Polling cadence. Seegen jobs typically finish in 15-45s. We poll a touch
-# slower than Pollinations because we're hitting a real metered API.
-_POLL_INTERVAL_SECONDS = 2.0
-_POLL_TIMEOUT_SECONDS = 180  # hard ceiling — surface a timeout rather than hang forever
+# Network timeout for a single HTTP request. NOT the same as the overall
+# job-wait budget — that's controlled by the Celery poll task (it stops
+# re-enqueueing after a configured elapsed time).
 _HTTP_TIMEOUT_SECONDS = 30
 
 # Seegen accepts these as inputs; we'll expose them as user-facing options in
@@ -52,8 +55,15 @@ _DEFAULT_RESOLUTION = "1k"
 _DEFAULT_ASPECT_RATIO = "1:1"
 _DEFAULT_OUTPUT_FORMAT = "png"
 
-_TERMINAL_OK = "COMPLETED"
-_TERMINAL_FAIL = "FAILED"
+# Map Seegen's lifecycle strings to our JobState enum. PENDING (queued
+# but not yet started) and PROCESSING (running) both surface to us as
+# "still going" — we don't need that finer-grained distinction.
+_SEEGEN_TO_JOB_STATE: dict[str, JobState] = {
+    "PENDING": JobState.PROCESSING,
+    "PROCESSING": JobState.PROCESSING,
+    "COMPLETED": JobState.DONE,
+    "FAILED": JobState.FAILED,
+}
 
 
 class SeegenAdapter:
@@ -61,15 +71,22 @@ class SeegenAdapter:
 
     def __init__(self, api_key: str | None) -> None:
         # Stored but not validated at construction — keys are checked lazily
-        # in `generate()` so the app can still boot if the key is missing
-        # from .env (the model just won't work until configured).
+        # in the public methods so the app can still boot if the key is
+        # missing from .env (the model just won't work until configured).
         self._api_key = api_key
 
-    def generate(self, model_id: str, inputs: GenerationInput) -> GenerationOutput:
-        if not self._api_key:
-            raise RuntimeError(
-                "Seegen API key is not configured. Set SEEGEN_API_KEY in apps/api/.env."
-            )
+    # ------------------------------------------------------------------
+    # AsyncProviderAdapter Protocol
+    # ------------------------------------------------------------------
+
+    def submit_async(self, model_id: str, inputs: GenerationInput) -> str:
+        """Submit a generation job and return Seegen's taskId.
+
+        Returns immediately — does not wait for completion. Raises if the
+        submission itself fails (auth, quota, validation); transient
+        polling failures are handled by `poll_status`.
+        """
+        self._require_key()
         if not inputs.text:
             raise ValueError("Seegen requires a text prompt.")
 
@@ -91,16 +108,47 @@ class SeegenAdapter:
         if inputs.image_urls:
             adapter_inputs["urls"] = inputs.image_urls[:10]
 
-        body = {
-            "model": model_name,
-            "inputs": adapter_inputs,
-        }
+        body = {"model": model_name, "inputs": adapter_inputs}
+        return self._submit(body)
 
-        task_id = self._submit(body)
-        result_url = self._poll_until_done(task_id)
-        return GenerationOutput(output_type=OutputType.IMAGE, url=result_url)
+    def poll_status(self, model_id: str, job_id: str) -> JobStatus:
+        """Check the job's current state. Non-blocking — returns immediately.
 
-    # --- internals --------------------------------------------------------
+        On COMPLETED, builds a GenerationOutput pointing at the first image
+        URL Seegen produced. On FAILED, captures the error message. On
+        anything else (PENDING/PROCESSING), returns JobState.PROCESSING and
+        leaves the caller to re-enqueue itself.
+        """
+        self._require_key()
+        del model_id  # not needed — Seegen's job id is globally unique
+
+        query = urllib.parse.urlencode({"taskId": job_id})
+        url = f"{_BASE_URL}{_QUERY_PATH}?{query}"
+        request = urllib.request.Request(
+            url,
+            headers=self._auth_headers(),
+            method="GET",
+        )
+        data = self._read_json(request)
+        raw_status = data.get("status", "")
+        state = _SEEGEN_TO_JOB_STATE.get(raw_status, JobState.PROCESSING)
+
+        if state is JobState.DONE:
+            return JobStatus(state=state, output=_extract_output(data, job_id))
+        if state is JobState.FAILED:
+            err = data.get("error") or "Seegen reported FAILED with no error message."
+            return JobStatus(state=state, error=f"Seegen task {job_id} failed: {err}")
+        return JobStatus(state=state)
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    def _require_key(self) -> None:
+        if not self._api_key:
+            raise RuntimeError(
+                "Seegen API key is not configured. Set SEEGEN_API_KEY in apps/api/.env."
+            )
 
     def _submit(self, body: Mapping[str, Any]) -> str:
         payload = json.dumps(body).encode("utf-8")
@@ -115,44 +163,6 @@ class SeegenAdapter:
         if not isinstance(task_id, str) or not task_id:
             raise RuntimeError(f"Seegen createTask returned no taskId: {data!r}")
         return task_id
-
-    def _poll_until_done(self, task_id: str) -> str:
-        deadline = time.monotonic() + _POLL_TIMEOUT_SECONDS
-        query = urllib.parse.urlencode({"taskId": task_id})
-        url = f"{_BASE_URL}{_QUERY_PATH}?{query}"
-
-        while True:
-            request = urllib.request.Request(
-                url,
-                headers=self._auth_headers(),
-                method="GET",
-            )
-            data = self._read_json(request)
-            status = data.get("status")
-
-            if status == _TERMINAL_OK:
-                output = data.get("output")
-                if isinstance(output, list) and output:
-                    first = output[0]
-                    if isinstance(first, dict):
-                        url_val = first.get("url")
-                        if isinstance(url_val, str):
-                            return url_val
-                raise RuntimeError(
-                    f"Seegen task {task_id} completed but returned no usable URL: {data!r}"
-                )
-
-            if status == _TERMINAL_FAIL:
-                err = data.get("error") or "Seegen reported FAILED with no error message."
-                raise RuntimeError(f"Seegen task {task_id} failed: {err}")
-
-            if time.monotonic() >= deadline:
-                raise TimeoutError(
-                    f"Seegen task {task_id} did not finish within "
-                    f"{_POLL_TIMEOUT_SECONDS}s (last status: {status})."
-                )
-
-            time.sleep(_POLL_INTERVAL_SECONDS)
 
     def _auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self._api_key}"}
@@ -178,3 +188,22 @@ class SeegenAdapter:
         if not isinstance(parsed, dict):
             raise RuntimeError(f"Seegen returned non-object JSON: {parsed!r}")
         return parsed
+
+
+def _extract_output(data: dict[str, Any], job_id: str) -> GenerationOutput:
+    """Pull the first image URL out of a COMPLETED queryTask response.
+
+    Defensive — Seegen's payload shape is documented but we'd rather raise
+    a clear error than silently produce a row with no URL if the shape
+    changes upstream.
+    """
+    output = data.get("output")
+    if isinstance(output, list) and output:
+        first = output[0]
+        if isinstance(first, dict):
+            url_val = first.get("url")
+            if isinstance(url_val, str):
+                return GenerationOutput(output_type=OutputType.IMAGE, url=url_val)
+    raise RuntimeError(
+        f"Seegen task {job_id} completed but returned no usable URL: {data!r}"
+    )

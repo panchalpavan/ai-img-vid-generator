@@ -60,6 +60,14 @@ class Settings(BaseSettings):
     # Get one at https://seegen.ai (free tier: 200 credits at signup).
     seegen_api_key: str | None = None
 
+    # Cloudflare Workers AI — same Cloudflare account that owns the R2
+    # bucket, separate API token (scoped to "Workers AI: Read"). Free tier
+    # is roughly 25-100 images/day depending on the model's neuron cost.
+    # Both must be set together; missing-config means the adapter doesn't
+    # register and the model doesn't appear in /models.
+    cloudflare_account_id: str | None = None
+    cloudflare_workers_ai_token: str | None = None
+
     # Cloudflare R2 object storage (Sprint 4A). S3-compatible — boto3 against
     # the R2 endpoint works the same as against S3. Zero egress fees + 10 GB
     # free tier; the only difference from S3 is the regional endpoint URL.

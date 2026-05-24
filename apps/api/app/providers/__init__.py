@@ -8,7 +8,13 @@ frontend form, /generations endpoint, and credit logic all read from
 """
 
 from app.core.config import settings
-from app.providers.base import ModelRegistry, ProviderAdapter
+from app.providers.base import (
+    AsyncProviderAdapter,
+    ModelRegistry,
+    ProviderAdapter,
+    SyncProviderAdapter,
+)
+from app.providers.cloudflare_workers_ai import CloudflareWorkersAIAdapter
 from app.providers.google_ai_studio import GoogleAIStudioAdapter
 from app.providers.pollinations import PollinationsAdapter
 from app.providers.seegen import SeegenAdapter
@@ -16,6 +22,8 @@ from app.providers.types import (
     GenerationInput,
     GenerationOutput,
     InputType,
+    JobState,
+    JobStatus,
     ModelConfig,
     OutputType,
     ProviderName,
@@ -77,10 +85,37 @@ registry.register(
         input_types=[InputType.TEXT],
         output_type=OutputType.IMAGE,
         cost_in_credits=2,
-        is_async=False,
+        # Sprint 6.3 — Seegen's adapter now implements AsyncProviderAdapter
+        # (submit_async + poll_status). Celery dispatches to the async
+        # path: submit, return immediately, poll task re-enqueues itself
+        # until terminal. Worker slots stop blocking on long generations.
+        is_async=True,
     ),
     _seegen_adapter,
 )
+
+
+# ---- Cloudflare Workers AI: free reliable image generation -------------
+# Registers only when BOTH env vars are set. Skipping the registration
+# (vs registering with disabled=True) keeps the model out of /models
+# entirely when CF isn't configured — no misleading "unavailable" entry.
+if settings.cloudflare_account_id and settings.cloudflare_workers_ai_token:
+    _cf_workers_ai_adapter = CloudflareWorkersAIAdapter(
+        account_id=settings.cloudflare_account_id,
+        api_token=settings.cloudflare_workers_ai_token,
+    )
+    registry.register(
+        ModelConfig(
+            id="cloudflare-flux-schnell",
+            provider=ProviderName.CLOUDFLARE_WORKERS_AI,
+            display_name="Cloudflare FLUX-1 Schnell (free)",
+            input_types=[InputType.TEXT],
+            output_type=OutputType.IMAGE,
+            cost_in_credits=2,
+            is_async=False,
+        ),
+        _cf_workers_ai_adapter,
+    )
 
 
 # ---- Pollinations.ai: free FLUX-backed image generation, no auth -------
@@ -104,12 +139,16 @@ registry.register(
 
 # Public re-exports for routers and other consumers.
 __all__ = [
+    "AsyncProviderAdapter",
     "GenerationInput",
     "GenerationOutput",
     "InputType",
+    "JobState",
+    "JobStatus",
     "ModelConfig",
     "OutputType",
     "ProviderAdapter",
     "ProviderName",
+    "SyncProviderAdapter",
     "registry",
 ]

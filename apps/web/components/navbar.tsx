@@ -56,6 +56,12 @@ export function Navbar({ session }: { session: Session | null }) {
 
         {session?.user && (
           <div className="flex items-center gap-3">
+            <Link
+              href="/history"
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              History
+            </Link>
             <CreditBadge onClick={() => setBuyOpen(true)} />
             <UserMenu user={session.user} />
           </div>

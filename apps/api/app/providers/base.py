@@ -1,30 +1,96 @@
-"""Abstract base classes and the model registry.
+"""Provider adapter contracts + the model registry.
 
-The registry is the lookup table the rest of the app uses: model_id in,
-(ModelConfig, ProviderAdapter) out. Adapters are protocols (structural),
-not subclasses — any class that implements the right method shape works.
+Two structural Protocols here, one per execution model:
+
+  - `SyncProviderAdapter` — for providers whose generations complete in a
+    single round trip (Pollinations: ~3-5s, Gemini text: ~1-2s). Adapter
+    exposes `generate(model_id, inputs) -> GenerationOutput`.
+
+  - `AsyncProviderAdapter` — for providers that hand back a job ID
+    immediately and require polling for the result (Seegen: 15-60s,
+    Sjinn (when added): minutes for video). Adapter exposes
+    `submit_async(model_id, inputs) -> str` (returns the provider's job
+    id) and `poll_status(model_id, job_id) -> JobStatus`.
+
+The Celery layer dispatches based on `ModelConfig.is_async`:
+  - is_async=False → SyncProviderAdapter.generate() in the worker
+  - is_async=True  → AsyncProviderAdapter.submit_async() + a separate
+                     self-re-enqueueing poll task that calls
+                     AsyncProviderAdapter.poll_status() periodically
+
+Routing is config-driven, not adapter-driven — the registry stores both
+the ModelConfig (which carries is_async) and the adapter instance, and
+the task asks the config which path to take. An adapter that supports
+both modes can implement both Protocols simultaneously; today none do.
+
+Protocols are structural (`runtime_checkable`) so the dispatch layer can
+do an `isinstance(adapter, AsyncProviderAdapter)` sanity check at routing
+time and surface a clear error if a model is misconfigured (e.g.
+`is_async=True` but the adapter only implements `generate`).
 """
 
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
-from app.providers.types import GenerationInput, GenerationOutput, ModelConfig
+from app.providers.types import (
+    GenerationInput,
+    GenerationOutput,
+    JobStatus,
+    ModelConfig,
+)
 
 
-class ProviderAdapter(Protocol):
-    """Structural contract every provider implementation must satisfy.
-
-    Sprint 2 uses only `generate` (sync). Sprint 3 will extend with
-    `submit_async` + `poll_status` for providers like Sjinn that return
-    a job ID instead of a finished result.
-    """
+@runtime_checkable
+class SyncProviderAdapter(Protocol):
+    """Structural contract for atomic, single-round-trip providers."""
 
     def generate(self, model_id: str, inputs: GenerationInput) -> GenerationOutput:
-        """Run a generation synchronously.
+        """Run a generation and return the finished result.
 
-        Returns the finished result. Raises on provider errors — the
-        /generations endpoint translates those to HTTP 4xx/5xx.
+        Raises on provider error — the Celery task converts to a FAILED
+        row with refund.
         """
         ...
+
+
+@runtime_checkable
+class AsyncProviderAdapter(Protocol):
+    """Structural contract for job-based providers (submit then poll).
+
+    Adapter does NOT block during the wait — `submit_async` returns
+    immediately with a provider-specific job id, and the Celery layer
+    drives polling via a separately-enqueued task. This keeps a single
+    Celery worker from being tied up for 15-60s (or longer for video)
+    per generation.
+    """
+
+    def submit_async(self, model_id: str, inputs: GenerationInput) -> str:
+        """Submit the job and return the provider's job id immediately.
+
+        Raises on submission error (auth, validation, quota). The Celery
+        task converts to a FAILED row + refund, same as a sync provider
+        failure.
+        """
+        ...
+
+    def poll_status(self, model_id: str, job_id: str) -> JobStatus:
+        """Check the job's current state without blocking.
+
+        Returns a `JobStatus`:
+          - state=PROCESSING → keep polling (caller re-enqueues)
+          - state=DONE       → `output` is set; persist as usual
+          - state=FAILED     → `error` is set; refund + mark FAILED
+
+        Raises on transient query errors so the caller can decide whether
+        to retry the poll (vs surfacing as a generation failure).
+        """
+        ...
+
+
+# Union of "any adapter we know how to dispatch to." Used by the registry
+# so the type system doesn't need to know which mode a given adapter
+# implements — the routing layer (Celery task) inspects ModelConfig.is_async
+# and calls into the appropriate Protocol.
+ProviderAdapter = SyncProviderAdapter | AsyncProviderAdapter
 
 
 class _RegistryEntry:

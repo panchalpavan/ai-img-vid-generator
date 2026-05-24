@@ -55,6 +55,13 @@ class Generation(SQLModel, table=True):
     result_text: str | None = None
     result_url: str | None = Field(default=None, max_length=1024)
 
+    # Sprint 6.2 — provider's own job id for async generations (e.g. the
+    # taskId Seegen hands back from `POST /jobs/createTask`). NULL for sync
+    # providers like Pollinations and Gemini text. The poll task reads this
+    # field to ask the provider for status, so it survives worker restarts
+    # without losing track of in-flight jobs.
+    provider_job_id: str | None = Field(default=None, max_length=255, index=True)
+
     # Human-readable error captured when status == FAILED.
     error: str | None = Field(default=None, max_length=2048)
 
