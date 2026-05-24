@@ -92,6 +92,25 @@ The 200/403 split is silent — there's no clear error message pointing at
 the UA. Symptom is "I just uploaded the object, listing it in the bucket
 confirms it's there, but fetching the public URL 403s."
 
+## `stripe.Event` is a `StripeObject`, not a dict — no `.get()`
+
+stripe-python's `Event` (and every nested `data.object`) inherits from `StripeObject`, whose overloaded `__getattr__` intercepts attribute lookups and tries to find the name as a dict key. Calling `event.get("type")` makes Python first look for an attribute called `get`, which doesn't resolve and instead triggers `__getattr__("get")` → `KeyError: 'get'` → re-raised as `AttributeError`.
+
+The supported access patterns are:
+
+- **Bracket access**: `event["type"]`, `checkout_session["payment_status"]`
+- **Attribute access**: `event.type`, `checkout_session.payment_status`
+
+Bracket access matches Stripe's docs more closely and avoids ambiguity when keys collide with real Python methods. Missing keys raise `KeyError`, which surfaces a real 500 — usually what you want at the webhook boundary (the alternative, silent None, can hide payload-shape drift).
+
+## Stripe `STRIPE_WEBHOOK_SECRET` is per-`stripe listen` session in dev
+
+The `whsec_...` printed by `stripe listen --forward-to ...` is **regenerated every time the command starts**. If you `Ctrl+C` and restart `stripe listen`, you get a new secret and the old one won't verify anything. Symptom: webhook handler returns 400 "Invalid signature" on every event right after restarting the listener.
+
+Fix: copy the new `whsec_...` into `apps/api/.env` each time you restart the listener, then restart `npm run dev` (Pydantic Settings caches `.env` at import).
+
+Production webhooks (configured in the Stripe Dashboard) have a stable per-endpoint secret — only local dev with the CLI has this churn.
+
 ## Pollinations.ai needs proper headers or returns 403
 
 Pollinations sits behind Cloudflare, which 403s requests with the default `Python-urllib/3.12` User-Agent (bot detection). The `PollinationsAdapter` sets a real-looking UA + `Referer` header + `referrer` query param. Don't strip these.

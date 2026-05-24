@@ -4,6 +4,56 @@
  */
 
 export interface paths {
+    "/billing/checkout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Checkout Session
+         * @description Create a Stripe Checkout Session for the requested pack.
+         *
+         *     Returns the hosted Stripe URL. The browser navigates there; Stripe
+         *     handles all card collection, 3DS, etc. On success/cancel, Stripe
+         *     redirects back to `success_url` / `cancel_url` (configured here).
+         *
+         *     The webhook (NOT this endpoint) is what actually grants the credits.
+         *     This endpoint just sets up the session.
+         */
+        post: operations["create_checkout_session_billing_checkout_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/billing/packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Packs
+         * @description Return every configured credit pack, cheapest first.
+         *
+         *     Public — no auth required. The catalog is fixed and not user-specific,
+         *     and exposing it lets a future logged-out landing page show pricing.
+         */
+        get: operations["list_packs_billing_packs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/generations": {
         parameters: {
             query?: never;
@@ -240,6 +290,22 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
+         * CheckoutRequest
+         * @description POST /billing/checkout body.
+         */
+        CheckoutRequest: {
+            /** Pack Id */
+            pack_id: string;
+        };
+        /**
+         * CheckoutResponse
+         * @description The URL the browser should navigate to.
+         */
+        CheckoutResponse: {
+            /** Checkout Url */
+            checkout_url: string;
+        };
+        /**
          * CompleteRequest
          * @description Sent after the browser finishes the direct PUT.
          */
@@ -421,6 +487,26 @@ export interface components {
          */
         OutputType: "text" | "image" | "video";
         /**
+         * PackResponse
+         * @description One credit pack as the frontend sees it.
+         *
+         *     Excludes the stripe_price_id because the browser never sends that —
+         *     it sends `pack_id` (our slug) instead. Keeps the Stripe-side
+         *     identifier out of the API contract.
+         */
+        PackResponse: {
+            /** Credits */
+            credits: number;
+            /** Currency */
+            currency: string;
+            /** Display Name */
+            display_name: string;
+            /** Id */
+            id: string;
+            /** Price Cents */
+            price_cents: number;
+        };
+        /**
          * PresignRequest
          * @description What the browser sends to /references/presign before uploading.
          */
@@ -507,6 +593,59 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    create_checkout_session_billing_checkout_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CheckoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CheckoutResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_packs_billing_packs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PackResponse"][];
+                };
+            };
+        };
+    };
     list_generations_generations_get: {
         parameters: {
             query?: {

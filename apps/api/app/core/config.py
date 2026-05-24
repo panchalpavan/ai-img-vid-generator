@@ -75,6 +75,28 @@ class Settings(BaseSettings):
     # objects exist but can't be displayed directly in the browser.
     r2_public_url: str | None = None
 
+    # Stripe — credit pack purchases (Sprint 5). All test-mode in dev.
+    # The secret key signs API calls server-side; the publishable key is
+    # safe to expose to the browser (used if we ever switch to embedded
+    # Stripe Elements — hosted Checkout doesn't strictly need it).
+    # The webhook secret is per-environment: locally it's whatever the
+    # `stripe listen` CLI prints; in prod it's set per webhook endpoint
+    # in the Stripe dashboard.
+    stripe_secret_key: str | None = None
+    stripe_publishable_key: str | None = None
+    stripe_webhook_secret: str | None = None
+    # Price IDs for the three credit packs. The "what credits each pack
+    # grants" mapping lives in `app/billing/packs.py` (not here), keyed by
+    # these IDs — keeps Stripe's source-of-truth (price_id) separate from
+    # our domain-level catalog.
+    stripe_price_id_starter: str | None = None
+    stripe_price_id_pro: str | None = None
+    stripe_price_id_studio: str | None = None
+    # Where Stripe should send the browser back after Checkout. Set this
+    # to the deployed frontend URL in prod. Two paths are appended by the
+    # billing router: ?checkout=success and ?checkout=cancel.
+    checkout_return_url_base: str = "http://localhost:3000"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

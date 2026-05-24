@@ -1,7 +1,7 @@
 # Sprint Plan — img-vid-generation
 
-> Last updated: 2026-05-22
-> Current sprint: Sprints 0.5 → 4A **all complete end-to-end**. Sprint 4B (pgvector RAG) **parked — no real use case for an image-gen app**. Sprint 5 (Stripe) is next.
+> Last updated: 2026-05-24
+> Current sprint: Sprints 0.5 → 5 **all complete end-to-end**. Sprint 4B (pgvector RAG) parked. Sprint 6 (Sjinn) is next.
 > Stack: Next.js 16 (frontend), FastAPI (backend), monorepo via npm workspaces + uv
 >
 > **Completed sprints (with verification):**
@@ -19,6 +19,8 @@
 > - Sprint 4A.1 (2026-05-21) — R2 storage wired. `app/core/storage.py` (boto3 against R2's S3-compatible endpoint). Settings: `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`, `R2_BUCKET`, `R2_PUBLIC_URL`. Smoke test confirms upload + public-fetch + delete roundtrip. **Gotcha logged**: r2.dev public URLs 403 Python's default User-Agent (Cloudflare bot detection — same as Pollinations); browsers fine.
 > - Sprint 4A.2 (2026-05-21) — Generation outputs migrated from base64 data URIs to R2. Celery task now decodes data:URIs OR server-side-fetches https URLs (with browser UA) and uploads to `generations/<id>.<ext>`. Alembic `2724c5210cfe` shrinks `result_url` back to VARCHAR(1024) (after NULL-ing legacy data:URI rows). Refund-on-storage-failure flagged as open business-logic question for Sprint 5 revisit.
 > - Sprint 4A.3 + 4A.4 (2026-05-22) — Reference Library (image refs). Direct-upload via **presigned URLs** (browser → R2, not proxied through FastAPI). Three-step flow: `POST /references/presign` → browser `PUT` to R2 → `POST /references/{id}/complete` (backend HEADs R2 to verify before INSERT). CORS configured on bucket via `scripts/setup_r2_cors.py`. New `references` SQLModel + Alembic `352086a915a3`. Frontend: `useUploadReference` orchestrator hook, file picker in PromptBar with thumbnail strip + remove buttons, refs flow into `GenerationInput.image_urls`. Seegen adapter passes through `urls` array for image-to-image mode.
+> - Sprint 4B (parked 2026-05-22) — pgvector RAG scaffold built then rolled back. No real use case for documents in an image-gen app. The five locked design decisions (single-table discriminator, separate chunks table, Gemini text-embedding-004, fixed-size chunking, retrieval injection in Celery task) preserved in this file's Sprint 4B section for future revisit when a real RAG use case appears.
+> - Sprint 5 (2026-05-24) — Stripe credit packs. Backend: `app/billing/packs.py` catalog (3 packs: Starter $5/100c, Pro $20/500c, Studio $60/2000c), `/billing/packs` + `/billing/checkout` + `/webhooks/stripe` router. **Idempotency** via `UNIQUE (type, reference_id)` on credit_transactions (Alembic `a1e63fecb42b`) — Stripe webhook retries land as IntegrityError → 200 ack. Stripe-hosted Checkout (full redirect, hosted UI), webhook signature verification via `stripe.Webhook.construct_event` on raw bytes. Frontend: `BuyCreditsModal` (inline Tailwind overlay), `useBillingPacks` + `useStartCheckout` hooks, navbar credit pill is now clickable, `?checkout=success/cancel` return URL handler invalidates `["me"]` and strips params. Smoke-tested end-to-end with `stripe listen` and test card. New gotchas: `stripe.Event` doesn't support `.get()` (use bracket access), `whsec_` regenerates each `stripe listen` session.
 
 ## Architecture summary
 
@@ -276,14 +278,27 @@ Sprint 5 (Stripe + monetization) is now next.
 
 ---
 
-## Sprint 5 — Monetization
+## Sprint 5 — Monetization (DONE 2026-05-24)
 
-**Goal:** Real Stripe. Credits backed by money.
+**Shipped:** real Stripe. Credits backed by money. **Test-mode only** for now — live mode requires UAE entity setup (target market; deferred).
 
-- 5.1: Stripe Checkout — Next.js calls FastAPI to create a session
-- 5.2: FastAPI webhook `POST /webhooks/stripe` — signature verification, idempotent ledger insert
-- 5.3: Buy Credits modal in frontend
-- **Learn:** Webhook signature verification, idempotency keys, Stripe test mode
+- ✅ **5.1 — Stripe Checkout.** `POST /billing/checkout` creates a `mode='payment'` Stripe Session with `client_reference_id = user.id`, returns the hosted URL. Browser does a full-page navigate to Stripe; `success_url`/`cancel_url` bounce back to `/?checkout=success|cancel`.
+- ✅ **5.2 — Webhook with signature verification + idempotent ledger insert.** `POST /webhooks/stripe` reads RAW bytes (not parsed JSON — re-serialization breaks signature), passes them to `stripe.Webhook.construct_event(payload, sig, secret)`. On `checkout.session.completed` (only event we care about), fetches the session's line items to get `price_id`, looks up the pack via `app/billing/packs.py`, inserts `CreditTransaction(type=PURCHASE, reference_id=stripe_session_id, amount=credits)`. **Idempotency from the DB**: Alembic `a1e63fecb42b` adds `UNIQUE (type, reference_id)` on credit_transactions; a duplicate insert raises `IntegrityError` which we catch and ack with 200 so Stripe stops retrying.
+- ✅ **5.3 — Buy Credits modal.** `BuyCreditsModal` (inline Tailwind overlay, no Shadcn Dialog dep) lists the three packs from `GET /billing/packs`. Navbar credit pill is now a button that opens the modal. `useStartCheckout` mutation creates the session and navigates the browser; `useCheckoutReturnHandler` (mounted in navbar) processes `?checkout=success` by invalidating the `["me"]` cache and stripping the params.
+- ✅ **5.4 — Stripe CLI local dev workflow.** `stripe login` + `stripe listen --forward-to localhost:8000/webhooks/stripe`. The `whsec_...` printed is per-session — regenerates every restart of the listener (gotcha logged).
+
+**Decisions made during this sprint:**
+
+- One-off credit packs only — subscriptions deferred. The CreditTransaction ledger is already future-proof for subscription renewals (just adds a `SUBSCRIPTION_RENEWAL` enum value); no schema lock-in.
+- Stripe-hosted Checkout (not embedded Elements). All card collection, 3DS, Apple Pay — on Stripe's domain. Future migration to Elements is localised to the frontend if we ever want fully embedded UI.
+- Three SKUs: Starter ($5 / 100c), Pro ($20 / 500c), Studio ($60 / 2000c) — adjustable in Stripe dashboard; the catalog mirrors price + credit values in `app/billing/packs.py` keyed by Stripe price_id.
+- Country = UAE in Stripe dashboard (target market; bypasses India invite-only restriction). Test-mode signup needs no verification — live-mode launch needs a real UAE entity OR a port to Razorpay.
+
+**Still open (deferred to future):**
+
+- Refund/dispute/chargeback handling — only `checkout.session.completed` handled today. Other events get 200 ack + no-op.
+- Live-mode setup (real UAE entity, KYB, payouts) — Sprint 7 deployment concern.
+- Refund-on-storage-failure policy (flagged in 4A.2) — left as-is for now; will revisit when real money is in the loop and the answer might change.
 
 ---
 

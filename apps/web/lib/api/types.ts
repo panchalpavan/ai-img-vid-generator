@@ -30,6 +30,10 @@ export type ReferenceResponse = components["schemas"]["ReferenceResponse"];
 export type PresignRequest = components["schemas"]["PresignRequest"];
 export type PresignResponse = components["schemas"]["PresignResponse"];
 export type CompleteRequest = components["schemas"]["CompleteRequest"];
+// Sprint 5 — Stripe billing
+export type PackResponse = components["schemas"]["PackResponse"];
+export type CheckoutRequest = components["schemas"]["CheckoutRequest"];
+export type CheckoutResponse = components["schemas"]["CheckoutResponse"];
 
 // ---------------------------------------------------------------------------
 // Per-endpoint shapes — useful when building a typed fetch wrapper later.

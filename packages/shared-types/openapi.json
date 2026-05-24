@@ -1,6 +1,34 @@
 {
   "components": {
     "schemas": {
+      "CheckoutRequest": {
+        "description": "POST /billing/checkout body.",
+        "properties": {
+          "pack_id": {
+            "title": "Pack Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pack_id"
+        ],
+        "title": "CheckoutRequest",
+        "type": "object"
+      },
+      "CheckoutResponse": {
+        "description": "The URL the browser should navigate to.",
+        "properties": {
+          "checkout_url": {
+            "title": "Checkout Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkout_url"
+        ],
+        "title": "CheckoutResponse",
+        "type": "object"
+      },
       "CompleteRequest": {
         "description": "Sent after the browser finishes the direct PUT.",
         "properties": {
@@ -352,6 +380,40 @@
         "title": "OutputType",
         "type": "string"
       },
+      "PackResponse": {
+        "description": "One credit pack as the frontend sees it.\n\nExcludes the stripe_price_id because the browser never sends that \u2014\nit sends `pack_id` (our slug) instead. Keeps the Stripe-side\nidentifier out of the API contract.",
+        "properties": {
+          "credits": {
+            "title": "Credits",
+            "type": "integer"
+          },
+          "currency": {
+            "title": "Currency",
+            "type": "string"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "price_cents": {
+            "title": "Price Cents",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "display_name",
+          "credits",
+          "price_cents",
+          "currency"
+        ],
+        "title": "PackResponse",
+        "type": "object"
+      },
       "PresignRequest": {
         "description": "What the browser sends to /references/presign before uploading.",
         "properties": {
@@ -533,6 +595,79 @@
   },
   "openapi": "3.1.0",
   "paths": {
+    "/billing/checkout": {
+      "post": {
+        "description": "Create a Stripe Checkout Session for the requested pack.\n\nReturns the hosted Stripe URL. The browser navigates there; Stripe\nhandles all card collection, 3DS, etc. On success/cancel, Stripe\nredirects back to `success_url` / `cancel_url` (configured here).\n\nThe webhook (NOT this endpoint) is what actually grants the credits.\nThis endpoint just sets up the session.",
+        "operationId": "create_checkout_session_billing_checkout_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckoutRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckoutResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Checkout Session",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
+    "/billing/packs": {
+      "get": {
+        "description": "Return every configured credit pack, cheapest first.\n\nPublic \u2014 no auth required. The catalog is fixed and not user-specific,\nand exposing it lets a future logged-out landing page show pricing.",
+        "operationId": "list_packs_billing_packs_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PackResponse"
+                  },
+                  "title": "Response List Packs Billing Packs Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Packs",
+        "tags": [
+          "billing"
+        ]
+      }
+    },
     "/generations": {
       "get": {
         "description": "List the caller's generations, newest first.",
