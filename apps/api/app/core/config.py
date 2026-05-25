@@ -105,6 +105,31 @@ class Settings(BaseSettings):
     # billing router: ?checkout=success and ?checkout=cancel.
     checkout_return_url_base: str = "http://localhost:3000"
 
+    # Comma-separated list of origins allowed by FastAPI's CORS middleware.
+    # Each entry is a fully-qualified origin (scheme + host + port). In
+    # dev a single localhost origin is enough; production needs the
+    # deployed frontend domain (and optionally a staging one). Trailing
+    # slashes are NOT allowed by the CORS spec — keep them off.
+    #
+    # Example prod value:
+    #   CORS_ALLOWED_ORIGINS=https://img-vid-generation.example.com,https://staging.example.com
+    cors_allowed_origins: str = "http://localhost:3000"
+
+    @property
+    def cors_allowed_origins_list(self) -> list[str]:
+        """Parse the comma-separated env into a list, stripping whitespace.
+
+        Pydantic Settings can't natively read a list from a string env var
+        without a custom validator; doing the split lazily via a property
+        keeps the env contract simple ("comma-separated string") while
+        downstream code gets a real list.
+        """
+        return [
+            origin.strip()
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

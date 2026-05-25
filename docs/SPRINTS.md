@@ -339,20 +339,96 @@ Sprint 5 (Stripe + monetization) is now next.
 
 ---
 
-## Sprint 7 — Deployment & Production (PENDING D18)
+## Sprint 7 — Deployment & Production (D18 pending; pre-flight prep DONE 2026-05-25)
 
-Options under consideration:
+D18 options under consideration:
+
 - Vercel (web) + Cloud Run (api + worker) + Cloud SQL + GCS + Vertex AI
 - Full GCP for everything
 - Fly.io for everything
 
-To be decided before Sprint 7 begins.
+D18 decision waits for the actual deploy moment — depends on cost tolerance, ops complexity preference, and whether we want to consolidate on Cloudflare (since R2 + Workers AI already live there).
+
+### Pre-flight prep (DONE 2026-05-25)
+
+Before any deploy can happen, every hardcoded URL was made env-driven and the open business-logic flags were resolved. Reviewable diff:
+
+- ✅ `CORS_ALLOWED_ORIGINS` (comma-separated) env var → drives both FastAPI's `CORSMiddleware` and `scripts/setup_r2_cors.py`. Single source of truth.
+- ✅ `CHECKOUT_RETURN_URL_BASE` was already env-driven (Sprint 5), confirmed.
+- ✅ `apps/web/.env.example` confirms `AUTH_URL` + `NEXT_PUBLIC_API_URL` env-driven.
+- ✅ Refund-on-storage-failure policy resolved (see "Resolved business-logic decisions" below).
+- ✅ Legacy NULL `result_url` rows in the gallery now show a "Result no longer available" placeholder instead of a blank "DONE" card.
+- ✅ Lint + typecheck + build all clean.
+
+### Deployment checklist (work through this when D18 is picked)
+
+#### Infrastructure to provision
+
+- Frontend host (Vercel / Cloud Run / Fly): point at the repo + set Auth.js env vars.
+- API host (Cloud Run / Fly): Docker image of `apps/api`, expose port 8000.
+- Worker host (Cloud Run worker / Fly machine): same Docker image, command `celery -A app.tasks worker`.
+- Managed Redis (Upstash / Redis Cloud / GCP Memorystore): give both API + worker a `REDIS_URL`.
+- Database: Supabase already managed (just add the prod connection pool URL).
+- Stripe: webhook endpoint in dashboard pointing at `https://api.<your-domain>/webhooks/stripe`, copy the per-endpoint `whsec_...`.
+
+#### Env vars to set in prod
+
+Use `apps/api/.env.example` and `apps/web/.env.example` as the master lists.
+
+`apps/api`:
+
+- `DATABASE_URL` (Supabase production pool)
+- `REDIS_URL` (managed Redis)
+- `JWT_SECRET` (32-byte base64; matches frontend `AUTH_SECRET`)
+- **Do NOT set `DEV_EMAIL`** — leaving it unset disables the infinite-credits bypass for everyone.
+- `FREE_STARTER_CREDITS` (decide policy: 0, 5, or 10)
+- `CORS_ALLOWED_ORIGINS=https://<frontend-domain>` (no trailing slash, comma-separated if multiple)
+- `CHECKOUT_RETURN_URL_BASE=https://<frontend-domain>`
+- All R2 vars + CF Workers AI + Seegen + Google + Stripe (same shape as dev, prod values)
+- Stripe webhook secret = the per-endpoint `whsec_...` from the dashboard (NOT the `stripe listen` one)
+
+`apps/web`:
+
+- `AUTH_SECRET` (matches API `JWT_SECRET`)
+- `AUTH_URL=https://<frontend-domain>`
+- `AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET` (production OAuth client — add the prod redirect URI in Google Cloud Console)
+- `NEXT_PUBLIC_API_URL=https://api.<your-domain>`
+
+#### One-shot post-deploy tasks
+
+1. Run Alembic migrations against prod DB: `uv run alembic upgrade head`.
+2. Re-run `scripts/setup_r2_cors.py` — picks up the new prod origin from `CORS_ALLOWED_ORIGINS`. Token needs **admin scope** for this one call (see GOTCHAS); downscope back to Object R/W after.
+3. Add prod redirect URI to Google OAuth client in GCP Console: `https://<frontend>/api/auth/callback/google`.
+4. In Stripe dashboard → Developers → Webhooks → add endpoint `https://api.<domain>/webhooks/stripe`, subscribe to `checkout.session.completed`, copy the per-endpoint `whsec_...` into prod `STRIPE_WEBHOOK_SECRET`.
+
+#### Smoke tests after deploy
+
+- Sign in with Google → `/me` returns the new user row + 0 balance (or `FREE_STARTER_CREDITS` value).
+- Submit a Pollinations generation → completes, image renders.
+- Submit a Seegen generation → `provider_job_id` populates, polls complete, image renders.
+- Buy a Starter Pack → Stripe Checkout → webhook → balance increases by 100.
+
+#### Things that stay deferred to Sprint 8+
+
+- Subscriptions (still future; ledger is already prepared).
+- Live-mode Stripe payouts (needs UAE entity decision).
+- SSE replacement for polling (parking lot).
+- UI polish.
 
 ---
 
 ## Open business-logic questions (flagged, not yet decided)
 
-- **Refund-on-storage-failure (flagged 2026-05-21, Sprint 4A.2).** Currently, if the provider call succeeds but the R2 upload fails, we refund the user's credits and mark the row FAILED. Open question: is that the right policy? Provider compute *did* happen (we paid Seegen, we used Pollinations bandwidth), so a strict reading says credits should still be charged. Counter-argument: from the user's perspective they got no usable output, so refunding is the empathic call. Likely revisited around Sprint 5 (Stripe) when real money is in the loop. Also relevant: partial-success cases (Sjinn might produce a usable preview but fail final upload).
+_(none currently open — resolved decisions move to the section below.)_
+
+## Resolved business-logic decisions
+
+- **Refund-on-storage-failure (resolved 2026-05-25, pre-Sprint-7).** When the provider call succeeds but R2 upload fails, **refund the user's credits and mark the row FAILED**. Reasoning:
+  - R2 is *our* infrastructure; a failure there is our problem, not the user's.
+  - From the user's perspective, no usable output landed — charging them is wrong.
+  - Provider compute is sunk cost; rare in practice (R2 uptime is high).
+  - Abuse vector (user triggers paid gen + claims refund) is theoretical at our scale. Revisit if it becomes real.
+  - Future Sjinn integration may need a partial-success variant (preview generated, final-asset upload failed) — handle that case when it appears, not pre-emptively.
 
 ## Parking Lot
 

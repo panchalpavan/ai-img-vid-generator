@@ -8,25 +8,36 @@ Why this is a separate script and not part of app startup:
   - Keeping it as an explicit script makes the policy change reviewable
     and intentional.
 
+The list of allowed origins is read from `CORS_ALLOWED_ORIGINS` in the
+environment — same source of truth as the FastAPI CORSMiddleware. That
+keeps "what origins can talk to us" in one place; when you add a
+production frontend domain, both the API CORS middleware and the R2
+bucket CORS rule pick it up automatically the next time this script
+runs.
+
 Run with:
-  uv --directory apps/api run python scripts/setup_r2_cors.py
+  uv --directory apps/api run python -m scripts.setup_r2_cors
+
+Requires the configured R2 token to have **admin scope** for this bucket
+(not just Object R/W). The runtime app only needs Object R/W; admin is
+needed solely to mutate bucket-level config like CORS. See GOTCHAS.md.
 """
 
 from __future__ import annotations
 
+from app.core.config import settings
 from app.core.storage import configure_cors
-
-# Origins allowed to PUT/GET objects via the browser. Add the production
-# domain here when we deploy (Sprint 7).
-ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-]
 
 
 def main() -> None:
-    configure_cors(ALLOWED_ORIGINS)
+    origins = settings.cors_allowed_origins_list
+    if not origins:
+        raise SystemExit(
+            "No origins configured. Set CORS_ALLOWED_ORIGINS in apps/api/.env."
+        )
+    configure_cors(origins)
     print("CORS policy applied.")
-    for origin in ALLOWED_ORIGINS:
+    for origin in origins:
         print(f"  - {origin}")
 
 

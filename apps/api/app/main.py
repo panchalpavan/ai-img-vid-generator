@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.db import get_session
 from app.routers import billing as billing_router
 from app.routers import generations as generations_router
@@ -26,11 +27,12 @@ app = FastAPI(
 )
 
 # Allow the Next.js frontend to call us from a different origin.
-# In dev that's http://localhost:3000. Sprint 7 (deploy) will switch this to
-# read allowed origins from env so we can add the production frontend domain.
+# Origins come from CORS_ALLOWED_ORIGINS env (comma-separated). Defaults to
+# http://localhost:3000 for dev convenience; deploy must set this to the
+# production frontend domain. See app/core/config.py for the parsed list.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=settings.cors_allowed_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

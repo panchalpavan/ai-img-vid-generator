@@ -173,6 +173,14 @@ function GenerationCard({
             {row.result_text}
           </span>
         </div>
+      ) : row.status === "done" ? (
+        // Legacy rows from Sprint 3.5: data URI was NULL'd by Alembic
+        // `2724c5210cfe` when we shrank result_url. Row metadata (prompt,
+        // model, timestamp) is preserved but the image bytes are gone.
+        <div className="flex size-full flex-col items-center justify-center gap-1 p-3 text-center text-xs text-muted-foreground/70">
+          <span className="text-2xl opacity-50">⛌</span>
+          <span>Result no longer available</span>
+        </div>
       ) : (
         <div className="flex size-full items-center justify-center p-3 text-center text-xs">
           <StatusBadge status={row.status} />

@@ -322,9 +322,16 @@ def _finalize_done(
     """Persist a successful output and mark the row DONE.
 
     Image outputs are uploaded to R2 first (so the URL we store is durable
-    and provider-independent). Storage failures refund + mark FAILED — the
-    refund-on-storage-failure policy is flagged in docs/SPRINTS.md as an
-    open business-logic question.
+    and provider-independent).
+
+    **Refund-on-storage-failure policy (decided 2026-05-25 pre-Sprint-7):**
+    If the provider succeeded but the R2 upload fails, we still refund the
+    credits and mark the row FAILED. Reasoning: R2 failures are our
+    infrastructure problem, not the user's fault — charging them for our
+    outage is wrong, and from their POV no usable output landed. Provider
+    compute is sunk cost (rare in practice), and the abuse vector
+    (triggering paid generations + claiming refund) is theoretical at our
+    scale. Revisit if abuse becomes real.
     """
     persisted_url = output.url
     if output.output_type == OutputType.IMAGE and output.url is not None:
