@@ -412,8 +412,59 @@ Use `apps/api/.env.example` and `apps/web/.env.example` as the master lists.
 
 - Subscriptions (still future; ledger is already prepared).
 - Live-mode Stripe payouts (needs UAE entity decision).
-- SSE replacement for polling (parking lot).
-- UI polish.
+- Everything in the post-deploy backlog below.
+
+---
+
+## Post-deploy backlog (planned 2026-05-25)
+
+Order locked after research workflow on video providers + PWA discussion. **Sequential after Sprint 7 deploy lands.**
+
+### Sprint 7.5 — Push everywhere (SSE + provider webhooks + Web Push / PWA basics)
+
+**Theme: stop polling, start pushing.** Three things share one architectural backbone (Redis pubsub channel per generation_id) so they're best done together rather than spread across sprints.
+
+- **7.5.1** — Add `GET /generations/{id}/events` SSE endpoint. Backend publishes to Redis pubsub on every row state transition (already happens implicitly in `run_generation` / `poll_generation`). SSE handler subscribes + relays. Frontend's `useGeneration(id)` switches from 1Hz polling to `EventSource`. Polling stays as a documented fallback for clients that can't open SSE (rare today).
+- **7.5.2** — fal.ai provider webhooks (when 7.6 lands — see below). For now, design the **AsyncProviderAdapter Protocol extension** for adapters that support webhooks: `register_webhook(model_id, job_id, callback_url) -> None`. Adapters can implement both poll AND webhook; routing prefers webhook in prod (HTTPS reachable), poll in dev. New endpoint `POST /webhooks/providers/{provider}` with HMAC verification.
+- **7.5.3** — PWA basics: `manifest.json`, icons, "Add to Home Screen" support. Service Worker registered but minimal (no offline strategy yet — just enables push API).
+- **7.5.4** — Web Push notifications. Service Worker handles push events; same Redis pubsub publish point that drives SSE also pushes a notification ("Your generation is ready") to subscribed devices. Backend manages push subscriptions via VAPID. Particularly valuable once video gen lands (Sprint 7.6) — 30s-2min jobs are perfect for "close tab, get notified when done."
+
+### Sprint 7.6 — Video generation (fal.ai LTX-Video)
+
+**Implemented as a new AsyncProviderAdapter — same Protocol as Seegen.** Workflow research (2026-05-25) confirmed: no truly-free recurring video tier exists in 2026. fal.ai's $10-20 one-time signup credit is the most generous trial. LTX-Video at ~$0.05/sec gives ~40 watchable 5-second clips before payment kicks in.
+
+- **7.6.1** — `apps/api/app/providers/falai_video.py` — async adapter (`submit_async` + `poll_status`). Stores `(model_id, request_id)` since fal's status URL embeds the model.
+- **7.6.2** — Generalize `_persist_image_to_r2` → `_persist_media_to_r2`: extend `_MIME_TO_EXT` for `video/mp4`, drop the `output_type == OutputType.IMAGE` guard. fal returns short-lived signed CDN URLs; download + re-upload to R2 (same pattern as Seegen).
+- **7.6.3** — Register `falai-ltx-video` in `app/providers/__init__.py`. `is_async=True`, `cost_in_credits=50` (tunable), `output_type=OutputType.VIDEO`, `is_async=True`. Conditional registration on `FAL_KEY` env var present.
+- **7.6.4** — Frontend: `ResultCard` + `GenerationCard` detect `output_type === 'video'` (need to expose `output_type` on `GenerationResponse` — small schema addition) and render `<video controls>` instead of `<img>`. Gallery thumbnails extract frame 0 via the `<video>` element's `preload="metadata"` + `poster` attribute (or a server-side ffmpeg step if quality matters — deferred polish).
+- **7.6.5** — Cost-control safeguards: surface fal balance in admin/settings UI (optional; nice-to-have), fail closed on credits exhausted with a clear "trial credits exhausted" error message instead of silent autopay.
+- **7.6.6** — Caveats to document: fal aggressively rotates model IDs (Wan 2.1 → 2.5 in 18 months); wrap `model_id` in a constant and consider a weekly contract test.
+
+### Sprint 8 — Generation UI redesign (user's brain-dump from 2026-05-25)
+
+The "polish and UI things I have in mind" sprint. Captured for memory:
+
+- Redesign chat/generation UI (user has specifics — discuss at sprint start)
+- Replace topbar with proper sidebar layout
+- Standardize component usage — replace raw `<button>`/`<input>` with Shadcn primitives, promote inline modals (`BuyCreditsModal`, gallery detail) to a reusable Dialog primitive
+- Polish overall look + spacing + typography
+- Animation while generating (skeleton, progress indicator, etc.)
+
+### Sprint 9 — Subscriptions + monetization v2 (when subscriptions actually make sense)
+
+Ledger is already future-proof. Adds:
+
+- `TransactionType.SUBSCRIPTION_RENEWAL` ledger enum value
+- Stripe subscription Price IDs + Checkout `mode='subscription'`
+- Webhook handlers for `customer.subscription.created/updated/deleted`, `invoice.payment_succeeded`, `invoice.payment_failed`
+- Customer portal link in UI for self-service cancellation
+- Subscription status surfaced in `/me`
+
+Optional. Triggered by "I want to launch this and accept recurring payments."
+
+### Sprint 10 — Live-mode Stripe + production money
+
+Path A: stand up a UAE entity (Free Zone company), provide Stripe with KYB docs, flip to live mode. Path B: port to Razorpay for India-based billing. Path C: stay test-mode forever, never accept real payments. Decision waits for "do I actually want to charge anyone?"
 
 ---
 
